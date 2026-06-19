@@ -35,27 +35,19 @@ xdm1000_scpi.py に集約する。
     確定できないため、現段階では時間窓平均の正式 API とは扱わない。
 """
 
-from __future__ import annotations
-
 import multiprocessing as mp
 import queue
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Optional, Union
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 from xdm1000.xdm1000_worker import _Xdm1000Worker
-
-# ------------------------------------------------------------------
-# worker 実行方式
-# ------------------------------------------------------------------
-# 通常運用: 別 process で worker を動かす。
-USE_WORKER_PROCESS = True
-
-# 簡易運用: process を使わず、同一 process 内で worker を直接呼ぶ。
-# start_continuous_meas() / start_statistics_mode() は測定完了まで戻らない。
-# USE_WORKER_PROCESS = False
-
 
 MeasureKind = Literal[
     "voltage_dc",
@@ -116,7 +108,7 @@ class MeasurementConfig:
     """現在の測定条件を表す小さなデータ構造である。"""
 
     kind: MeasureKind
-    range_value: str | int | float = "AUTO"
+    range_value: Union[str, int, float] = "AUTO"
     rate: str = "F"
 
 
@@ -134,7 +126,9 @@ class Xdm1000Ctrl:
         timeout: float = 2.0,
         baudrate: int = 115200,
     ) -> None:
-        """XDM1000 上位制御クラスを生成し、測定ワーカーを起動する。"""
+        """
+        XDM1000 上位制御クラスを生成し、測定ワーカーを起動
+        """
         self.port = port
         self.timeout = timeout
         self.baudrate = baudrate
@@ -142,8 +136,8 @@ class Xdm1000Ctrl:
         self._manager = mp.Manager()
         self._state = self._manager.dict()
         self._result_store = self._manager.dict()
-        self._command_q: mp.Queue = mp.Queue()
-        self._response_q: mp.Queue = mp.Queue()
+        self._command_q = mp.Queue()  # type: mp.Queue
+        self._response_q = mp.Queue()  # type: mp.Queue
         self._stop_event = mp.Event()
         self._rpc_lock = mp.Lock()
 
@@ -168,11 +162,15 @@ class Xdm1000Ctrl:
     # ------------------------------------------------------------------
 
     def _is_running(self) -> bool:
-        """長時間測定中かどうかを返す。"""
+        """
+        長時間測定中かどうかを返す。
+        """
         return bool(self._state.get("running", False))
 
     def _require_not_running(self) -> None:
-        """測定中なら測定・設定 API を拒否する。"""
+        """
+        測定中なら測定・設定 API を拒否
+        """
         if self._is_running():
             raise DeviceBusyError(
                 f"測定器は running 中である: "
@@ -182,14 +180,18 @@ class Xdm1000Ctrl:
     def _rpc(
         self,
         name: str,
-        args: Optional[dict[str, Any]] = None,
+        args: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> Any:
-        """親プロセスから測定ワーカーへ 1 コマンドを送る。"""
+        """
+        親プロセスから測定ワーカーへ 1 コマンドを送る。
+        """
         req_id = uuid.uuid4().hex
+
         with self._rpc_lock:
             self._command_q.put({"req_id": req_id, "cmd": name, "args": args or {}})
             deadline = None if timeout is None else time.time() + timeout
+
             while True:
                 remaining = (
                     None if deadline is None else max(0.0, deadline - time.time())
@@ -200,12 +202,15 @@ class Xdm1000Ctrl:
                     response = self._response_q.get(timeout=remaining)
                 except queue.Empty as exc:
                     raise TimeoutError(f"worker 応答待ち timeout: {name!r}") from exc
+
                 if response.get("req_id") != req_id:
                     raise RuntimeError(
                         f"worker response の req_id が一致しない: {response!r}"
                     )
+
                 if response.get("ok"):
                     return response.get("result")
+
                 raise DeviceWorkerError(
                     f"{response.get('error')}\n{response.get('traceback', '')}"
                 )
@@ -215,7 +220,9 @@ class Xdm1000Ctrl:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """測定ワーカープロセスを終了する。"""
+        """
+        測定ワーカープロセスを終了
+        """
         if self._process.is_alive():
             try:
                 self._rpc("shutdown", timeout=2.0)
@@ -232,41 +239,66 @@ class Xdm1000Ctrl:
         self.close()
 
     def __enter__(self) -> "Xdm1000Ctrl":
-        """with 文用のエントリである。"""
+        """
+        with 文用のエントリ
+        """
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
-        """with 文終了時にワーカーを停止する。"""
+    def __exit__(
+        self,
+        exc_type,
+        exc,
+        tb,
+    ) -> None:
+        """
+        with 文終了時にワーカーを停止
+        """
         self.close()
 
     # ------------------------------------------------------------------
     # 測定中でも許可する API
     # ------------------------------------------------------------------
 
-    def get_state(self) -> dict[str, Any]:
-        """現在の状態を返す。測定中でも呼べる。"""
+    def get_state(self) -> Dict[str, Any]:
+        """
+        現在の状態を返す。測定中でも呼べる。
+        """
         state = dict(self._state)
         state["process_alive"] = self._process.is_alive()
         return state
 
     def is_running(self) -> bool:
-        """長時間測定中なら True を返す。"""
+        """
+        長時間測定中なら True を返す。
+        """
         return self._is_running()
 
-    def stop_job(self) -> dict[str, Any]:
-        """実行中の長時間測定に停止要求を出す。測定中でも呼べる。"""
+    def stop_job(self) -> Dict[str, Any]:
+        """
+        実行中の長時間測定に停止要求を出す。測定中でも呼べる。
+        """
         self._stop_event.set()
         return self.get_state()
 
-    def get_continuous_result(self, clear: bool = False) -> Optional[dict[str, Any]]:
-        """連続測定の結果を返す。測定終了後にまとめて取得する想定である。"""
+    def get_continuous_result(
+        self,
+        clear: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        連続測定の結果を返す。測定終了後にまとめて取得する想定
+        """
         result = self._result_store.get("continuous")
         if clear and "continuous" in self._result_store:
             del self._result_store["continuous"]
         return result
 
-    def get_statistics_result(self, clear: bool = False) -> Optional[dict[str, Any]]:
-        """統計モードテストの結果を返す。"""
+    def get_statistics_result(
+        self,
+        clear: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        統計モードテストの結果を返す。
+        """
         result = self._result_store.get("statistics")
         if clear and "statistics" in self._result_store:
             del self._result_store["statistics"]
@@ -278,12 +310,15 @@ class Xdm1000Ctrl:
     # ------------------------------------------------------------------
 
     def idn(self) -> str:
-        """*IDN? を返す。測定中は拒否する。"""
+        """
+        *IDN? を返す。測定中は拒否
+        """
         self._require_not_running()
         return self._rpc("idn", timeout=5.0)
 
     def _reset_scpi_internal(self) -> None:
-        """内部確認用に *RST を実行する。
+        """
+        内部確認用に *RST を実行
 
         上位公開 API としては扱わない。通常の利用では呼ばない。
         測定中は拒否する。
@@ -294,10 +329,12 @@ class Xdm1000Ctrl:
     def set_meas_mode(
         self,
         kind: MeasureKind,
-        range_value: str | int | float = "AUTO",
+        range_value: Union[str, int, float] = "AUTO",
         rate: str = "F",
-    ) -> dict[str, Any]:
-        """測定種別・レンジ・速度を設定する。測定中は拒否する。"""
+    ) -> Dict[str, Any]:
+        """
+        測定種別・レンジ・速度を設定。測定中は拒否
+        """
         self._require_not_running()
         return self._rpc(
             "set_meas_mode",
@@ -308,11 +345,12 @@ class Xdm1000Ctrl:
     def meas_one_shot(
         self,
         kind: MeasureKind,
-        range_value: str | int | float = "AUTO",
+        range_value: Union[str, int, float] = "AUTO",
         rate: str = "F",
         settle: float = 0.0,
-    ) -> dict[str, Any]:
-        """1 shot 測定を実行する。
+    ) -> Dict[str, Any]:
+        """
+        1 shot 測定を実行
 
         ``kind`` と ``range_value`` と ``rate`` を設定し、必要なら ``settle`` 秒待ってから
         ``MEAS1?`` を 1 回読む。測定中は拒否する。
@@ -327,11 +365,13 @@ class Xdm1000Ctrl:
     def meas(
         self,
         kind: MeasureKind = "voltage_dc",
-        range_value: str | int | float = "AUTO",
+        range_value: Union[str, int, float] = "AUTO",
         rate: str = "F",
         settle: float = 0.0,
-    ) -> dict[str, Any]:
-        """1 shot 測定の短縮名である。"""
+    ) -> Dict[str, Any]:
+        """
+        1 shot 測定の短縮名
+        """
         return self.meas_one_shot(
             kind=kind,
             range_value=range_value,
@@ -340,15 +380,23 @@ class Xdm1000Ctrl:
         )
 
     def meas_voltage_dc(
-        self, range_value: str | int | float = "AUTO", rate: str = "F"
-    ) -> dict[str, Any]:
-        """DC 電圧を 1 shot 測定する。"""
+        self,
+        range_value: Union[str, int, float] = "AUTO",
+        rate: str = "F",
+    ) -> Dict[str, Any]:
+        """
+        DC 電圧を 1 shot 測定
+        """
         return self.meas_one_shot("voltage_dc", range_value, rate)
 
     def meas_current_dc(
-        self, range_value: str | int | float = "AUTO", rate: str = "F"
-    ) -> dict[str, Any]:
-        """DC 電流を 1 shot 測定する。"""
+        self,
+        range_value: Union[str, int, float] = "AUTO",
+        rate: str = "F",
+    ) -> Dict[str, Any]:
+        """
+        DC 電流を 1 shot 測定
+        """
         return self.meas_one_shot("current_dc", range_value, rate)
 
     # ------------------------------------------------------------------
@@ -359,12 +407,13 @@ class Xdm1000Ctrl:
         self,
         kind: MeasureKind,
         duration: float,
-        range_value: str | int | float = "AUTO",
+        range_value: Union[str, int, float] = "AUTO",
         rate: str = "F",
         interval: float = 0.0,
         settle: float = 0.0,
-    ) -> dict[str, Any]:
-        """擬似 continuous 測定を開始する。
+    ) -> Dict[str, Any]:
+        """
+        擬似 continuous 測定を開始する。
 
         ``duration`` 秒だけ、ワーカープロセス側で ``MEAS1?`` を繰り返す。
         ``interval=0`` の場合は Python 側では待たず、装置とシリアル通信が許す範囲で
@@ -393,10 +442,10 @@ class Xdm1000Ctrl:
         self,
         kind: MeasureKind,
         duration: float,
-        range_value: str | int | float = "AUTO",
+        range_value: Union[str, int, float] = "AUTO",
         rate: str = "F",
         settle: float = 0.0,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """statistics モードのテスト測定を開始する。
 
         XDM1000 の ``CALCulate:AVERage:ALL?`` は minimum, maximum, average, count を
@@ -418,8 +467,10 @@ class Xdm1000Ctrl:
             timeout=10.0 + max(0.0, settle),
         )
 
-    def wait_until_done(self, poll_interval: float = 0.2) -> dict[str, Any]:
-        """サンプル main 用に、running が終わるまで状態を表示しながら待つ。"""
+    def wait_until_done(self, poll_interval: float = 0.2) -> Dict[str, Any]:
+        """
+        running が終わるまで状態を表示しながら待つ。
+        """
         while True:
             state = self.get_state()
             print("STATE:", state)
