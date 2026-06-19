@@ -457,7 +457,7 @@ def _worker_loop(
         state["worker_alive"] = False
 
 
-class XDM1000:
+class Xdm1000Ctrl:
     """XDM1000/XDM1000 を測定器として扱う上位制御クラスである。
 
     コンストラクタで測定ワーカープロセスを起動する。ワーカープロセスは起動から
@@ -568,7 +568,7 @@ class XDM1000:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
         self.close()
 
-    def __enter__(self) -> "XDM1000":
+    def __enter__(self) -> "Xdm1000Ctrl":
         """with 文用のエントリである。"""
         return self
 
@@ -756,7 +756,7 @@ class XDM1000:
         )
 
 
-def _wait_until_done(dmm: XDM1000, poll_interval: float = 0.2) -> dict[str, Any]:
+def _wait_until_done(dmm: Xdm1000Ctrl, poll_interval: float = 0.2) -> dict[str, Any]:
     """サンプル main 用に、running が終わるまで状態を表示しながら待つ。"""
     while True:
         state = dmm.get_state()
@@ -818,7 +818,7 @@ def _example_main() -> None:
 
     INTERVAL = 0.0
 
-    with XDM1000(
+    with Xdm1000Ctrl(
         port=PORT,
         timeout=TIMEOUT,
         baudrate=BAUDRATE,
