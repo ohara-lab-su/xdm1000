@@ -218,6 +218,9 @@ def _worker_loop(
 
     try:
         scpi = XDM1000SCPI(port=port, timeout=timeout, baudrate=baudrate)
+        # 上位制御クラスでは remote/local を公開しない。
+        # 通信モード制御はワーカー起動・終了時の内部処理として扱う。
+        scpi.remote()
         state["worker_alive"] = True
         state["port"] = port
         state["baudrate"] = baudrate
@@ -243,13 +246,6 @@ def _worker_loop(
                 if name == "idn":
                     response_q.put({"req_id": req_id, "ok": True, "result": scpi.idn()})
 
-                elif name == "remote":
-                    scpi.remote()
-                    response_q.put({"req_id": req_id, "ok": True, "result": None})
-
-                elif name == "local":
-                    scpi.local()
-                    response_q.put({"req_id": req_id, "ok": True, "result": None})
 
                 elif name == "reset":
                     scpi.reset()
@@ -431,6 +427,10 @@ def _worker_loop(
 
     try:
         if scpi is not None:
+            try:
+                scpi.local()
+            except Exception:
+                pass
             scpi.close()
     finally:
         state["worker_alive"] = False
@@ -579,22 +579,13 @@ class XDM1000:
 
     # ------------------------------------------------------------------
     # 測定中は拒否する通常 API
+    # remote/local は公開しない。通信モード制御はワーカー内部で完結させる。
     # ------------------------------------------------------------------
 
     def idn(self) -> str:
         """*IDN? を返す。測定中は拒否する。"""
         self._require_not_running()
         return self._rpc("idn", timeout=5.0)
-
-    def remote(self) -> None:
-        """remote mode に入る。測定中は拒否する。"""
-        self._require_not_running()
-        self._rpc("remote", timeout=5.0)
-
-    def local(self) -> None:
-        """local mode に戻す。測定中は拒否する。"""
-        self._require_not_running()
-        self._rpc("local", timeout=5.0)
 
     def reset(self) -> None:
         """*RST を実行する。測定中は拒否する。"""
@@ -763,7 +754,6 @@ def _example_main() -> None:
     with XDM1000(port=args.port, timeout=args.timeout, baudrate=args.baudrate) as dmm:
         print("初期 state:", dmm.get_state())
         print("IDN:", dmm.idn())
-        dmm.remote()
         try:
             print("1 shot:", dmm.measure_one_shot(args.mode, args.range_value, args.rate, settle=0.2))
 
@@ -793,7 +783,7 @@ def _example_main() -> None:
             _wait_until_done(dmm)
             print("statistics result:", dmm.get_statistics_result(clear=True))
         finally:
-            dmm.local()
+            pass
 
 
 if __name__ == "__main__":
