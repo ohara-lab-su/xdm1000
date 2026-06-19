@@ -46,8 +46,10 @@ class XDM1241:
         port: str,
         timeout: float = 1.0,
         baudrate: int = 115200,
+        logger=None,
     ) -> None:
         """USB-Serial ポートを開く。"""
+        self._logger = logger
         self.ser = serial.Serial(
             port=port,
             baudrate=baudrate,
@@ -64,6 +66,10 @@ class XDM1241:
     def close(self) -> None:
         """シリアルポートを閉じる。"""
         self.ser.close()
+
+    def disconnect(self) -> None:
+        """サーバー停止時に呼ばれる解放用エイリアスである。"""
+        self.close()
 
     def __enter__(self) -> "XDM1241":
         """with 文用のエントリである。"""
