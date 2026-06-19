@@ -3,6 +3,7 @@ from typing import Any, Literal, Optional
 import multiprocessing as mp
 import traceback
 import time
+import math
 
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 

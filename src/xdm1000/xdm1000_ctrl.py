@@ -37,7 +37,6 @@ xdm1000_scpi.py に集約する。
 
 from __future__ import annotations
 
-import math
 import multiprocessing as mp
 import queue
 import time
@@ -45,7 +44,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
-from xdm1000.xdm1000_scpi import Xdm1000Scpi
 from xdm1000.xdm1000_worker import _Xdm1000Worker
 
 MeasureKind = Literal[
@@ -62,23 +60,6 @@ MeasureKind = Literal[
     "diode",
     "continuity",
 ]
-
-
-class DeviceBusyError(RuntimeError):
-    """測定器が長時間測定中のため、測定・設定要求を拒否したことを表す。"""
-
-
-class DeviceWorkerError(RuntimeError):
-    """測定ワーカープロセス側で例外が発生したことを表す。"""
-
-
-@dataclass(frozen=True)
-class MeasurementConfig:
-    """現在の測定条件を表す小さなデータ構造である。"""
-
-    kind: MeasureKind
-    range_value: str | int | float = "AUTO"
-    rate: str = "F"
 
 
 def _worker_loop(
@@ -109,6 +90,23 @@ def _worker_loop(
         logger_name=logger_name,
     )
     worker.run()
+
+
+class DeviceBusyError(RuntimeError):
+    """測定器が長時間測定中のため、測定・設定要求を拒否したことを表す。"""
+
+
+class DeviceWorkerError(RuntimeError):
+    """測定ワーカープロセス側で例外が発生したことを表す。"""
+
+
+@dataclass(frozen=True)
+class MeasurementConfig:
+    """現在の測定条件を表す小さなデータ構造である。"""
+
+    kind: MeasureKind
+    range_value: str | int | float = "AUTO"
+    rate: str = "F"
 
 
 class Xdm1000Ctrl:
