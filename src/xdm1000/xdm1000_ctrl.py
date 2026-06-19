@@ -9,6 +9,7 @@ xdm1000_scpi.py に集約する。
 --------
 
 * Python threading は使わない。
+* ``remote()`` / ``local()`` は上位 API として公開しない。
 * multiprocessing.Process で測定ワーカーを分離する。
 * 測定ワーカープロセスだけがシリアルポートを保持する。
 * 親プロセスはサーバー側 API 状態、結果、開始・停止要求を管理する。
@@ -212,7 +213,9 @@ def _worker_loop(
         """共有 state にワーカー例外を記録する。"""
         state["running"] = False
         state["finished_at"] = time.time()
-        state["error"] = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+        state["error"] = "".join(
+            traceback.format_exception_only(type(exc), exc)
+        ).strip()
         state["traceback"] = traceback.format_exc()
         state["message"] = "error"
 
@@ -246,13 +249,14 @@ def _worker_loop(
                 if name == "idn":
                     response_q.put({"req_id": req_id, "ok": True, "result": scpi.idn()})
 
-
                 elif name == "reset":
                     scpi.reset()
                     response_q.put({"req_id": req_id, "ok": True, "result": None})
 
                 elif name == "set_measurement_mode":
-                    _configure_measurement(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    _configure_measurement(
+                        scpi, args["kind"], args.get("range_value", "AUTO")
+                    )
                     scpi.set_rate(args.get("rate", "F"))
                     state["measurement_kind"] = args["kind"]
                     state["range_value"] = args.get("range_value", "AUTO")
@@ -260,7 +264,9 @@ def _worker_loop(
                     response_q.put({"req_id": req_id, "ok": True, "result": dict(args)})
 
                 elif name == "one_shot":
-                    _configure_measurement(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    _configure_measurement(
+                        scpi, args["kind"], args.get("range_value", "AUTO")
+                    )
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
                     t0 = time.perf_counter()
@@ -289,17 +295,23 @@ def _worker_loop(
 
                     set_running(job_id, "continuous", args)
                     stop_event.clear()
-                    _configure_measurement(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    _configure_measurement(
+                        scpi, args["kind"], args.get("range_value", "AUTO")
+                    )
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
-                    response_q.put({"req_id": req_id, "ok": True, "result": {"job_id": job_id}})
+                    response_q.put(
+                        {"req_id": req_id, "ok": True, "result": {"job_id": job_id}}
+                    )
 
                     samples: list[dict[str, Any]] = []
                     t0 = time.perf_counter()
                     deadline = t0 + duration
                     index = 0
                     try:
-                        while time.perf_counter() < deadline and not stop_event.is_set():
+                        while (
+                            time.perf_counter() < deadline and not stop_event.is_set()
+                        ):
                             s0 = _sample_clock(t0)
                             value = scpi.measure_main()
                             s1 = _sample_clock(t0)
@@ -326,7 +338,9 @@ def _worker_loop(
                                 while time.perf_counter() < sleep_until:
                                     if stop_event.is_set():
                                         break
-                                    time.sleep(min(0.005, sleep_until - time.perf_counter()))
+                                    time.sleep(
+                                        min(0.005, sleep_until - time.perf_counter())
+                                    )
 
                     except BaseException as exc:
                         result_store["continuous"] = {
@@ -364,10 +378,14 @@ def _worker_loop(
 
                     set_running(job_id, "statistics", args)
                     stop_event.clear()
-                    _configure_measurement(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    _configure_measurement(
+                        scpi, args["kind"], args.get("range_value", "AUTO")
+                    )
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
-                    response_q.put({"req_id": req_id, "ok": True, "result": {"job_id": job_id}})
+                    response_q.put(
+                        {"req_id": req_id, "ok": True, "result": {"job_id": job_id}}
+                    )
 
                     try:
                         # 統計モードは現段階ではテスト用である。
@@ -377,7 +395,9 @@ def _worker_loop(
                         scpi.set_calc_function("AVERage")
                         t0 = time.perf_counter()
                         deadline = t0 + duration
-                        while time.perf_counter() < deadline and not stop_event.is_set():
+                        while (
+                            time.perf_counter() < deadline and not stop_event.is_set()
+                        ):
                             time.sleep(min(0.05, deadline - time.perf_counter()))
                         stats = scpi.get_average_all()
                         result_store["statistics"] = {
@@ -416,12 +436,14 @@ def _worker_loop(
                     raise ValueError(f"未知の worker command である: {name!r}")
 
             except BaseException as exc:
-                response_q.put({
-                    "req_id": req_id,
-                    "ok": False,
-                    "error": repr(exc),
-                    "traceback": traceback.format_exc(),
-                })
+                response_q.put(
+                    {
+                        "req_id": req_id,
+                        "ok": False,
+                        "error": repr(exc),
+                        "traceback": traceback.format_exc(),
+                    }
+                )
         except BaseException:
             state["worker_loop_error"] = traceback.format_exc()
 
@@ -495,14 +517,21 @@ class XDM1000:
                 f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
             )
 
-    def _rpc(self, name: str, args: Optional[dict[str, Any]] = None, timeout: Optional[float] = None) -> Any:
+    def _rpc(
+        self,
+        name: str,
+        args: Optional[dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
         """親プロセスから測定ワーカーへ 1 コマンドを送る。"""
         req_id = uuid.uuid4().hex
         with self._rpc_lock:
             self._command_q.put({"req_id": req_id, "cmd": name, "args": args or {}})
             deadline = None if timeout is None else time.time() + timeout
             while True:
-                remaining = None if deadline is None else max(0.0, deadline - time.time())
+                remaining = (
+                    None if deadline is None else max(0.0, deadline - time.time())
+                )
                 if deadline is not None and remaining <= 0:
                     raise TimeoutError(f"worker 応答待ち timeout: {name!r}")
                 try:
@@ -510,10 +539,14 @@ class XDM1000:
                 except queue.Empty as exc:
                     raise TimeoutError(f"worker 応答待ち timeout: {name!r}") from exc
                 if response.get("req_id") != req_id:
-                    raise RuntimeError(f"worker response の req_id が一致しない: {response!r}")
+                    raise RuntimeError(
+                        f"worker response の req_id が一致しない: {response!r}"
+                    )
                 if response.get("ok"):
                     return response.get("result")
-                raise DeviceWorkerError(f"{response.get('error')}\n{response.get('traceback', '')}")
+                raise DeviceWorkerError(
+                    f"{response.get('error')}\n{response.get('traceback', '')}"
+                )
 
     # ------------------------------------------------------------------
     # ライフサイクル
@@ -587,8 +620,12 @@ class XDM1000:
         self._require_not_running()
         return self._rpc("idn", timeout=5.0)
 
-    def reset(self) -> None:
-        """*RST を実行する。測定中は拒否する。"""
+    def _reset_scpi_internal(self) -> None:
+        """内部確認用に *RST を実行する。
+
+        上位公開 API としては扱わない。通常の利用では呼ばない。
+        測定中は拒否する。
+        """
         self._require_not_running()
         self._rpc("reset", timeout=10.0)
 
@@ -633,13 +670,19 @@ class XDM1000:
         settle: float = 0.0,
     ) -> dict[str, Any]:
         """1 shot 測定の短縮名である。"""
-        return self.measure_one_shot(kind=kind, range_value=range_value, rate=rate, settle=settle)
+        return self.measure_one_shot(
+            kind=kind, range_value=range_value, rate=rate, settle=settle
+        )
 
-    def measure_voltage_dc(self, range_value: str | int | float = "AUTO", rate: str = "F") -> dict[str, Any]:
+    def measure_voltage_dc(
+        self, range_value: str | int | float = "AUTO", rate: str = "F"
+    ) -> dict[str, Any]:
         """DC 電圧を 1 shot 測定する。"""
         return self.measure_one_shot("voltage_dc", range_value, rate)
 
-    def measure_current_dc(self, range_value: str | int | float = "AUTO", rate: str = "F") -> dict[str, Any]:
+    def measure_current_dc(
+        self, range_value: str | int | float = "AUTO", rate: str = "F"
+    ) -> dict[str, Any]:
         """DC 電流を 1 shot 測定する。"""
         return self.measure_one_shot("current_dc", range_value, rate)
 
@@ -734,56 +777,97 @@ def _example_main() -> None:
 
     1 shot 測定、擬似 continuous 測定、statistics テストを順に実行する。
     """
-    import argparse
+    # ----------------------------------------------------------------------
+    # 接続設定
+    # ----------------------------------------------------------------------
 
-    parser = argparse.ArgumentParser(description="XDM1000 上位制御クラスサンプル")
-    parser.add_argument("port", help="例: /dev/cu.usbserial-140")
-    parser.add_argument("--baudrate", type=int, default=115200)
-    parser.add_argument("--timeout", type=float, default=2.0)
-    parser.add_argument("--mode", default="voltage_dc", choices=[
-        "voltage_dc", "voltage_ac", "current_dc", "current_ac",
-        "resistance", "fresistance", "frequency", "period", "capacitance",
-        "temperature_rtd", "diode", "continuity",
-    ])
-    parser.add_argument("--range", dest="range_value", default="AUTO")
-    parser.add_argument("--rate", default="F")
-    parser.add_argument("--duration", type=float, default=5.0)
-    parser.add_argument("--interval", type=float, default=0.0)
-    args = parser.parse_args()
+    PORT = "/dev/cu.usbserial-140"
+    BAUDRATE = 115200
+    TIMEOUT = 2.0
 
-    with XDM1000(port=args.port, timeout=args.timeout, baudrate=args.baudrate) as dmm:
+    # ----------------------------------------------------------------------
+    # 測定条件
+    # ----------------------------------------------------------------------
+
+    MODE = "voltage_dc"
+
+    # MODE = "voltage_ac"
+    # MODE = "current_dc"
+    # MODE = "current_ac"
+    # MODE = "resistance"
+    # MODE = "fresistance"
+    # MODE = "frequency"
+    # MODE = "period"
+    # MODE = "capacitance"
+    # MODE = "temperature_rtd"
+    # MODE = "diode"
+    # MODE = "continuity"
+
+    RANGE = "AUTO"
+
+    # RANGE = 10
+    # RANGE = 100
+    # RANGE = 1000
+
+    RATE = "F"
+
+    # RATE = "M"
+    # RATE = "S"
+
+    SETTLE = 0.2
+
+    DURATION = 5.0
+
+    INTERVAL = 0.0
+
+    with XDM1000(
+        port=PORT,
+        timeout=TIMEOUT,
+        baudrate=BAUDRATE,
+    ) as dmm:
+
         print("初期 state:", dmm.get_state())
         print("IDN:", dmm.idn())
-        try:
-            print("1 shot:", dmm.measure_one_shot(args.mode, args.range_value, args.rate, settle=0.2))
 
-            print("continuous start:")
-            print(dmm.start_continuous_measurement(
-                kind=args.mode,
-                duration=args.duration,
-                range_value=args.range_value,
-                rate=args.rate,
-                interval=args.interval,
-                settle=0.2,
-            ))
-            _wait_until_done(dmm)
-            result = dmm.get_continuous_result(clear=True)
-            print("continuous result stats:", None if result is None else result.get("stats"))
-            if result is not None:
-                print("sample count:", len(result.get("samples", [])))
+        print("1 shot:")
+        print(
+            dmm.measure_one_shot(
+                kind=MODE,
+                range_value=RANGE,
+                rate=RATE,
+                settle=SETTLE,
+            )
+        )
 
-            print("statistics test start:")
-            print(dmm.start_statistics_mode(
-                kind=args.mode,
-                duration=args.duration,
-                range_value=args.range_value,
-                rate=args.rate,
-                settle=0.2,
-            ))
-            _wait_until_done(dmm)
-            print("statistics result:", dmm.get_statistics_result(clear=True))
-        finally:
-            pass
+        print("continuous start:")
+        print(
+            dmm.start_continuous_measurement(
+                kind=MODE,
+                duration=DURATION,
+                range_value=RANGE,
+                rate=RATE,
+                interval=INTERVAL,
+                settle=SETTLE,
+            )
+        )
+
+        _wait_until_done(dmm)
+
+        result = dmm.get_continuous_result(clear=True)
+        print(result)
+        print("statistics start:")
+        print(
+            dmm.start_statistics_mode(
+                kind=MODE,
+                duration=DURATION,
+                range_value=RANGE,
+                rate=RATE,
+                settle=SETTLE,
+            )
+        )
+
+        _wait_until_done(dmm)
+        print(dmm.get_statistics_result(clear=True))
 
 
 if __name__ == "__main__":

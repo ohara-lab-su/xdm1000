@@ -1,4 +1,3 @@
-# 保存先: xdm1241_scpi.py
 #!/usr/bin/env python3
 """
 OWON XDM1241 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
@@ -171,6 +170,41 @@ class XDM1241:
 
     # CONFigure subsystem
 
+
+    def get_continuity_threshold(self) -> float:
+        """導通しきい値を取得する。
+
+        SCPI:
+            ``SENSe:CONTinuity:THREshold?``
+        """
+        return self.query_float("SENSe:CONTinuity:THREshold?")
+
+    def set_calc_state(self, enabled: bool) -> None:
+        """CALCulate 機能の ON/OFF を設定する。
+
+        SCPI:
+            ``CALCulate:STATe ON|OFF``
+        """
+        self.write(f"CALCulate:STATe {'ON' if enabled else 'OFF'}")
+
+    def get_calc_state(self) -> bool:
+        """CALCulate 機能の ON/OFF 状態を取得する。
+
+        SCPI:
+            ``CALCulate:STATe?``
+        """
+        return bool(self.query_int("CALCulate:STATe?"))
+
+    def get_average_all_raw(self) -> str:
+        """statistics の生応答を取得する。
+
+        SCPI:
+            ``CALCulate:AVERage:ALL?``
+
+        ``get_average_all()`` はこの応答を ``AverageStats`` に変換する。
+        """
+        return self.query("CALCulate:AVERage:ALL?")
+
     def configure_voltage_dc(self, range_value: ScpiValue = "AUTO") -> None:
         """DC 電圧測定に切り替え、レンジを設定する。"""
         self.write(f"CONFigure:VOLTage:DC {range_value}")
@@ -226,7 +260,7 @@ class XDM1241:
 
     def get_average_all(self) -> AverageStats:
         """統計値の minimum, maximum, average, count を取得する。"""
-        raw = self.query("CALCulate:AVERage:ALL?")
+        raw = self.get_average_all_raw()
         values = [v.strip() for v in raw.split(",")]
         if len(values) != 4:
             raise ValueError(f"unexpected CALCulate:AVERage:ALL? response: {raw}")
