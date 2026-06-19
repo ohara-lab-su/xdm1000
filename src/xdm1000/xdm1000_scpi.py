@@ -69,11 +69,11 @@ class Xdm1000Scpi:
         self.ser.close()
 
     def disconnect(self) -> None:
-        """サーバー停止時に呼ばれる解放用エイリアスである。"""
+        """サーバー停止時に呼ばれる解放用エイリアス"""
         self.close()
 
     def __enter__(self) -> "Xdm1000Scpi":
-        """with 文用のエントリである。"""
+        """with 文用のエントリ"""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -82,6 +82,18 @@ class Xdm1000Scpi:
             self.local()
         finally:
             self.close()
+
+    def __del__(self) -> None:
+        """オブジェクト破棄時に local mode へ戻して解放する。"""
+        try:
+            self.local()
+        except Exception:
+            pass
+
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def write(self, command: str) -> None:
         """SCPI コマンドを送信する。"""
@@ -352,15 +364,16 @@ def main() -> None:
     """DC 電圧を 10 回読む最小サンプルである。"""
     port = "/dev/cu.usbserial-140"
 
-    with Xdm1000Scpi(port) as dmm:
-        print("IDN:", dmm.idn())
-        dmm.configure_voltage_dc("AUTO")
-        dmm.set_rate("M")
-        time.sleep(0.5)
+    dmm = Xdm1000Scpi(port)
 
-        for _ in range(10):
-            print(dmm.meas_main())
-            time.sleep(0.5)
+    print("IDN:", dmm.idn())
+    dmm.configure_voltage_dc("AUTO")
+    dmm.set_rate("M")
+    time.sleep(0.5)
+
+    for _ in range(10):
+        print(dmm.meas_main())
+        time.sleep(0.5)
 
 
 if __name__ == "__main__":
