@@ -161,14 +161,14 @@ xdm1000_api_spec = [
         summary="Get NULL offset",
     ),
     _api("calc_off", None, None, summary="Disable calculation"),
-    # misc / measure
+    # misc / meas
     _api("auto", None, None, summary="Enable autoscale"),
     _api("get_auto", None, BoolResponse, summary="Get autoscale state"),
     _api("set_range", RangeIndexRequest, None, summary="Set current function range"),
     _api("set_rate", RateRequest, None, summary="Set measurement rate"),
     _api("get_rate", None, StringResponse, summary="Get measurement rate"),
-    _api("measure_raw", None, StringResponse, summary="MEAS? raw"),
-    _api("measure", None, MeasureResponse, summary="MEAS? parsed"),
-    _api("measure_main", None, FloatResponse, summary="MEAS1?"),
-    _api("measure_sub", None, FloatResponse, summary="MEAS2?"),
+    _api("meas_raw", None, StringResponse, summary="MEAS? raw"),
+    _api("meas", None, MeasureResponse, summary="MEAS? parsed"),
+    _api("meas_main", None, FloatResponse, summary="MEAS1?"),
+    _api("meas_sub", None, FloatResponse, summary="MEAS2?"),
 ]

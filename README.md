@@ -1370,7 +1370,7 @@ statistics mode の結果を返す。
 測定モードを設定する。
 
 ```python
-dmm.set_measurement_mode(
+dmm.set_meas_mode(
     kind="voltage_dc",
     range_value="AUTO",
     rate="F",
@@ -1422,7 +1422,7 @@ DeviceBusyError
 指定した測定条件で 1 回だけ測定する。
 
 ```python
-result = dmm.measure_one_shot(
+result = dmm.meas_one_shot(
     kind="voltage_dc",
     range_value="AUTO",
     rate="F",
@@ -1478,7 +1478,7 @@ dict を返す方が望ましい。
 指定時間、疑似連続測定を開始する。
 
 ```python
-dmm.start_continuous_measurement(
+dmm.start_continuous_meas(
     kind="voltage_dc",
     duration=10.0,
     range_value="AUTO",

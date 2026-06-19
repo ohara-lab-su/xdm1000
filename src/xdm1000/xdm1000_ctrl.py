@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OWON XDM1000 / XDM1241 用の上位制御クラスである。
+"""OWON XDM1000 / XDM1000 用の上位制御クラスである。
 
 このファイルは「測定器としての使いやすい API」を提供する上位層である。
 SCPI コマンドを直接並べる層ではない。SCPI の低レベル API は
@@ -21,10 +21,10 @@ xdm1000_scpi.py に集約する。
 ------------------
 
 1. 1 shot 測定
-    ``measure_one_shot()`` / ``meas()`` で 1 回だけ ``MEAS1?`` を読む。
+    ``meas_one_shot()`` / ``meas()`` で 1 回だけ ``MEAS1?`` を読む。
 
 2. 連続測定モード
-    ``start_continuous_measurement(duration=..., interval=0.0)`` で、指定時間だけ
+    ``start_continuous_meas(duration=..., interval=0.0)`` で、指定時間だけ
     ワーカープロセスが最速または指定周期で ``MEAS1?`` を読み、各点に
     PC 側時刻を付与して保存する。結果は測定終了後にまとめて
     ``get_continuous_result()`` で取得する。
@@ -99,7 +99,7 @@ def _sample_clock(t0_perf: float) -> dict[str, float]:
     }
 
 
-def _configure_measurement(
+def _configure_meas(
     scpi: XDM1000SCPI,
     kind: str,
     range_value: str | int | float = "AUTO",
@@ -194,7 +194,7 @@ def _worker_loop(
         state["error"] = None
         state["traceback"] = None
         state["message"] = "running"
-        state["measurement_kind"] = args.get("kind")
+        state["meas_kind"] = args.get("kind")
         state["range_value"] = args.get("range_value", "AUTO")
         state["rate"] = args.get("rate", "F")
         state["duration"] = args.get("duration")
@@ -253,25 +253,21 @@ def _worker_loop(
                     scpi.reset()
                     response_q.put({"req_id": req_id, "ok": True, "result": None})
 
-                elif name == "set_measurement_mode":
-                    _configure_measurement(
-                        scpi, args["kind"], args.get("range_value", "AUTO")
-                    )
+                elif name == "set_meas_mode":
+                    _configure_meas(scpi, args["kind"], args.get("range_value", "AUTO"))
                     scpi.set_rate(args.get("rate", "F"))
-                    state["measurement_kind"] = args["kind"]
+                    state["meas_kind"] = args["kind"]
                     state["range_value"] = args.get("range_value", "AUTO")
                     state["rate"] = args.get("rate", "F")
                     response_q.put({"req_id": req_id, "ok": True, "result": dict(args)})
 
                 elif name == "one_shot":
-                    _configure_measurement(
-                        scpi, args["kind"], args.get("range_value", "AUTO")
-                    )
+                    _configure_meas(scpi, args["kind"], args.get("range_value", "AUTO"))
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
                     t0 = time.perf_counter()
                     before = _sample_clock(t0)
-                    value = scpi.measure_main()
+                    value = scpi.meas_main()
                     after = _sample_clock(t0)
                     result = {
                         "kind": args["kind"],
@@ -295,9 +291,7 @@ def _worker_loop(
 
                     set_running(job_id, "continuous", args)
                     stop_event.clear()
-                    _configure_measurement(
-                        scpi, args["kind"], args.get("range_value", "AUTO")
-                    )
+                    _configure_meas(scpi, args["kind"], args.get("range_value", "AUTO"))
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
                     response_q.put(
@@ -313,7 +307,7 @@ def _worker_loop(
                             time.perf_counter() < deadline and not stop_event.is_set()
                         ):
                             s0 = _sample_clock(t0)
-                            value = scpi.measure_main()
+                            value = scpi.meas_main()
                             s1 = _sample_clock(t0)
                             sample = {
                                 "index": index,
@@ -378,9 +372,7 @@ def _worker_loop(
 
                     set_running(job_id, "statistics", args)
                     stop_event.clear()
-                    _configure_measurement(
-                        scpi, args["kind"], args.get("range_value", "AUTO")
-                    )
+                    _configure_meas(scpi, args["kind"], args.get("range_value", "AUTO"))
                     scpi.set_rate(args.get("rate", "F"))
                     time.sleep(float(args.get("settle", 0.0)))
                     response_q.put(
@@ -392,6 +384,7 @@ def _worker_loop(
                         # XDM1000 の statistics がいつ clear/start されるかは実機確認が必要である。
                         # したがって、ここでは CALC:FUNC AVERage を設定して duration 秒待ち、
                         # CALC:AVERage:ALL? を読むだけに留める。
+
                         scpi.set_calc_function("AVERage")
                         t0 = time.perf_counter()
                         deadline = t0 + duration
@@ -459,7 +452,7 @@ def _worker_loop(
 
 
 class XDM1000:
-    """XDM1000/XDM1241 を測定器として扱う上位制御クラスである。
+    """XDM1000/XDM1000 を測定器として扱う上位制御クラスである。
 
     コンストラクタで測定ワーカープロセスを起動する。ワーカープロセスは起動から
     ``close()`` までシリアルポートを保持する。親プロセスはサーバー API として
@@ -629,7 +622,7 @@ class XDM1000:
         self._require_not_running()
         self._rpc("reset", timeout=10.0)
 
-    def set_measurement_mode(
+    def set_meas_mode(
         self,
         kind: MeasureKind,
         range_value: str | int | float = "AUTO",
@@ -638,12 +631,12 @@ class XDM1000:
         """測定種別・レンジ・速度を設定する。測定中は拒否する。"""
         self._require_not_running()
         return self._rpc(
-            "set_measurement_mode",
+            "set_meas_mode",
             {"kind": kind, "range_value": range_value, "rate": rate},
             timeout=10.0,
         )
 
-    def measure_one_shot(
+    def meas_one_shot(
         self,
         kind: MeasureKind,
         range_value: str | int | float = "AUTO",
@@ -670,27 +663,30 @@ class XDM1000:
         settle: float = 0.0,
     ) -> dict[str, Any]:
         """1 shot 測定の短縮名である。"""
-        return self.measure_one_shot(
-            kind=kind, range_value=range_value, rate=rate, settle=settle
+        return self.meas_one_shot(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
+            settle=settle,
         )
 
-    def measure_voltage_dc(
+    def meas_voltage_dc(
         self, range_value: str | int | float = "AUTO", rate: str = "F"
     ) -> dict[str, Any]:
         """DC 電圧を 1 shot 測定する。"""
-        return self.measure_one_shot("voltage_dc", range_value, rate)
+        return self.meas_one_shot("voltage_dc", range_value, rate)
 
-    def measure_current_dc(
+    def meas_current_dc(
         self, range_value: str | int | float = "AUTO", rate: str = "F"
     ) -> dict[str, Any]:
         """DC 電流を 1 shot 測定する。"""
-        return self.measure_one_shot("current_dc", range_value, rate)
+        return self.meas_one_shot("current_dc", range_value, rate)
 
     # ------------------------------------------------------------------
     # 長時間測定 API
     # ------------------------------------------------------------------
 
-    def start_continuous_measurement(
+    def start_continuous_meas(
         self,
         kind: MeasureKind,
         duration: float,
@@ -829,44 +825,45 @@ def _example_main() -> None:
         print("初期 state:", dmm.get_state())
         print("IDN:", dmm.idn())
 
-        print("1 shot:")
-        print(
-            dmm.measure_one_shot(
-                kind=MODE,
-                range_value=RANGE,
-                rate=RATE,
-                settle=SETTLE,
+        for i in range(10):
+            print("1 shot:")
+            print(
+                dmm.meas_one_shot(
+                    kind=MODE,
+                    range_value=RANGE,
+                    rate=RATE,
+                    settle=SETTLE,
+                )
             )
-        )
 
-        print("continuous start:")
-        print(
-            dmm.start_continuous_measurement(
-                kind=MODE,
-                duration=DURATION,
-                range_value=RANGE,
-                rate=RATE,
-                interval=INTERVAL,
-                settle=SETTLE,
-            )
-        )
+        # print("continuous start:")
+        # print(
+        #     dmm.start_continuous_meas(
+        #         kind=MODE,
+        #         duration=DURATION,
+        #         range_value=RANGE,
+        #         rate=RATE,
+        #         interval=INTERVAL,
+        #         settle=SETTLE,
+        #     )
+        # )
 
         _wait_until_done(dmm)
 
-        result = dmm.get_continuous_result(clear=True)
-        print(result)
-        print("statistics start:")
-        print(
-            dmm.start_statistics_mode(
-                kind=MODE,
-                duration=DURATION,
-                range_value=RANGE,
-                rate=RATE,
-                settle=SETTLE,
-            )
-        )
+        # result = dmm.get_continuous_result(clear=True)
+        # print(result)
+        # print("statistics start:")
+        # print(
+        #     dmm.start_statistics_mode(
+        #         kind=MODE,
+        #         duration=DURATION,
+        #         range_value=RANGE,
+        #         rate=RATE,
+        #         settle=SETTLE,
+        #     )
+        # )
 
-        _wait_until_done(dmm)
+        # _wait_until_done(dmm)
         print(dmm.get_statistics_result(clear=True))
 
 
