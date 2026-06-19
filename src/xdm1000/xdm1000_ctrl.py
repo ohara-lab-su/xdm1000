@@ -47,9 +47,9 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 try:
-    from .xdm1000_scpi import XDM1000SCPI
+    from .xdm1000_scpi import Xdm1000Scpi
 except ImportError:  # 直接実行時のサンプル用である。
-    from xdm1000_scpi import XDM1000SCPI
+    from xdm1000_scpi import Xdm1000Scpi
 
 
 MeasureKind = Literal[
@@ -100,7 +100,7 @@ def _sample_clock(t0_perf: float) -> dict[str, float]:
 
 
 def _configure_meas(
-    scpi: XDM1000SCPI,
+    scpi: Xdm1000Scpi,
     kind: str,
     range_value: str | int | float = "AUTO",
 ) -> None:
@@ -168,10 +168,10 @@ def _worker_loop(
 ) -> None:
     """測定ワーカープロセスの本体である。
 
-    この関数だけが ``XDM1000SCPI`` を生成し、シリアルポートを保持する。
+    この関数だけが `Xdm1000Scpi`` を生成し、シリアルポートを保持する。
     親プロセスはシリアルポートへ直接触らない。
     """
-    scpi: XDM1000SCPI | None = None
+    scpi: Xdm1000Scpi | None = None
 
     def set_idle(message: str = "idle") -> None:
         """共有 state を idle に戻す。"""
@@ -220,14 +220,20 @@ def _worker_loop(
         state["message"] = "error"
 
     try:
-        scpi = XDM1000SCPI(port=port, timeout=timeout, baudrate=baudrate)
+        scpi = Xdm1000Scpi(
+            port=port,
+            timeout=timeout,
+            baudrate=baudrate,
+        )
         # 上位制御クラスでは remote/local を公開しない。
         # 通信モード制御はワーカー起動・終了時の内部処理として扱う。
         scpi.remote()
+
         state["worker_alive"] = True
         state["port"] = port
         state["baudrate"] = baudrate
         set_idle("worker_ready")
+
     except BaseException as exc:
         state["worker_alive"] = False
         state["error"] = repr(exc)
