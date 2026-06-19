@@ -7,13 +7,12 @@ import time
 
 from xdm1000.server_fastapi.clients.sync_xdm1000_client import SyncXDM1000Client
 
-
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8000
 
 
 def main() -> None:
-    """サーバー側の XDM1241 制御クラスを透過 API として操作する。"""
+    """サーバー側の XDM1000 制御クラスを透過 API として操作する。"""
     dmm = SyncXDM1000Client(
         server_ip=SERVER_IP,
         server_port=SERVER_PORT,

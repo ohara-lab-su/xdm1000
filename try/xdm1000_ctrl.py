@@ -1,9 +1,9 @@
 # 保存先: xdm1241_scpi.py
 #!/usr/bin/env python3
 """
-OWON XDM1241 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
+OWON XDM1000 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
 
-このファイルは pyserial 経由で USB-Serial 接続された XDM1241 に SCPI を送る。
+このファイルは pyserial 経由で USB-Serial 接続された XDM1000 に SCPI を送る。
 XDM1041/XDM2041 用として公開されている XDM1000 Series Programming Manual に
 記載された SCPI コマンドを一通り薄く包む。
 
@@ -39,7 +39,7 @@ class AverageStats:
 
 
 class XDM1241:
-    """OWON XDM1241 に SCPI コマンドを送る低レベル制御クラスである。"""
+    """OWON XDM1000 に SCPI コマンドを送る低レベル制御クラスである。"""
 
     def __init__(
         self,
@@ -65,7 +65,7 @@ class XDM1241:
         """シリアルポートを閉じる。"""
         self.ser.close()
 
-    def __enter__(self) -> "XDM1241":
+    def __enter__(self) -> "XDM1000":
         """with 文用のエントリである。"""
         return self
 
@@ -86,7 +86,7 @@ class XDM1241:
         self.write(command)
         response = self.ser.readline().decode("ascii", errors="replace").strip()
         if response == "":
-            raise TimeoutError(f"no response from XDM1241: {command}")
+            raise TimeoutError(f"no response from XDM1000: {command}")
         return response
 
     def query_float(self, command: str) -> float:
