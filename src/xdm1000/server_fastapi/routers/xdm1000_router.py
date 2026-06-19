@@ -10,7 +10,7 @@ from ese774_frame.routers.device_router import DeviceRouter
 from xdm1000.server_fastapi.models.common import AverageStatsResponse
 
 
-class XDM1000Router(DeviceRouter):
+class Xdm1000Router(DeviceRouter):
     """XDM1000 制御クラスを ese774_frame で透過公開する router である。"""
 
     def __init__(

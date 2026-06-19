@@ -48,19 +48,19 @@ def main() -> None:
     make_pyi_device_client(
         filename=str(root / "clients" / "async_xdm1000_client.pyi"),
         api_spec=xdm1000_api_spec,
-        class_name="AsyncXDM1000Client",
+        class_name="AsyncXdm1000Client",
         async_mode=True,
     )
     make_pyi_device_client(
         filename=str(root / "clients" / "sync_xdm1000_client.pyi"),
         api_spec=xdm1000_api_spec,
-        class_name="SyncXDM1000Client",
+        class_name="SyncXdm1000Client",
         async_mode=False,
     )
     make_pyi_device_router(
         filename=str(root / "routers" / "xdm1000_router.pyi"),
         api_spec=xdm1000_api_spec,
-        class_name="XDM1000Router",
+        class_name="Xdm1000Router",
     )
 
 
