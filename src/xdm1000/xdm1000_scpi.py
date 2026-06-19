@@ -1,8 +1,10 @@
+# 保存先: xdm1241_scpi.py
 #!/usr/bin/env python3
 """
-OWON XDM1000 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
+OWON XDM1241 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
+XDM1000 系共通
 
-このファイルは pyserial 経由で USB-Serial 接続された XDM1000 に SCPI を送る。
+このファイルは pyserial 経由で USB-Serial 接続された XDM1241 に SCPI を送る。
 XDM1041/XDM2041 用として公開されている XDM1000 Series Programming Manual に
 記載された SCPI コマンドを一通り薄く包む。
 
@@ -38,7 +40,7 @@ class AverageStats:
 
 
 class Xdm1000Scpi:
-    """OWON XDM1000 に SCPI コマンドを送る低レベル制御クラスである。"""
+    """OWON XDM1000 系に SCPI コマンドを送る低レベル制御クラスである。"""
 
     def __init__(
         self,
@@ -75,8 +77,11 @@ class Xdm1000Scpi:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        """with 文終了時にシリアルポートを閉じる。"""
-        self.close()
+        """with 文終了時に local へ戻してシリアルポートを閉じる。"""
+        try:
+            self.local()
+        finally:
+            self.close()
 
     def write(self, command: str) -> None:
         """SCPI コマンドを送信する。"""
@@ -91,7 +96,7 @@ class Xdm1000Scpi:
         self.write(command)
         response = self.ser.readline().decode("ascii", errors="replace").strip()
         if response == "":
-            raise TimeoutError(f"no response from XdmScpi1000: {command}")
+            raise TimeoutError(f"no response from XDM1241: {command}")
         return response
 
     def query_float(self, command: str) -> float:
@@ -102,7 +107,9 @@ class Xdm1000Scpi:
         """SCPI クエリ応答を int として返す。"""
         return int(float(self.query(command)))
 
+    #
     # IEEE488.2 common commands
+    #
 
     def idn(self) -> str:
         """*IDN? により機器識別文字列を取得する。"""
@@ -112,7 +119,9 @@ class Xdm1000Scpi:
         """*RST により機器設定をデフォルトに戻す。"""
         self.write("*RST")
 
+    #
     # SYSTem subsystem
+    #
 
     def remote(self) -> None:
         """SYSTem:REMote により SCPI remote mode に入る。"""
@@ -174,40 +183,6 @@ class Xdm1000Scpi:
     # CONFigure subsystem
     #
 
-    def get_continuity_threshold(self) -> float:
-        """導通しきい値を取得する。
-
-        SCPI:
-            ``SENSe:CONTinuity:THREshold?``
-        """
-        return self.query_float("SENSe:CONTinuity:THREshold?")
-
-    def set_calc_state(self, enabled: bool) -> None:
-        """CALCulate 機能の ON/OFF を設定する。
-
-        SCPI:
-            ``CALCulate:STATe ON|OFF``
-        """
-        self.write(f"CALCulate:STATe {'ON' if enabled else 'OFF'}")
-
-    def get_calc_state(self) -> bool:
-        """CALCulate 機能の ON/OFF 状態を取得する。
-
-        SCPI:
-            ``CALCulate:STATe?``
-        """
-        return bool(self.query_int("CALCulate:STATe?"))
-
-    def get_average_all_raw(self) -> str:
-        """statistics の生応答を取得する。
-
-        SCPI:
-            ``CALCulate:AVERage:ALL?``
-
-        ``get_average_all()`` はこの応答を ``AverageStats`` に変換する。
-        """
-        return self.query("CALCulate:AVERage:ALL?")
-
     def configure_voltage_dc(self, range_value: ScpiValue = "AUTO") -> None:
         """DC 電圧測定に切り替え、レンジを設定する。"""
         self.write(f"CONFigure:VOLTage:DC {range_value}")
@@ -265,7 +240,7 @@ class Xdm1000Scpi:
 
     def get_average_all(self) -> AverageStats:
         """統計値の minimum, maximum, average, count を取得する。"""
-        raw = self.get_average_all_raw()
+        raw = self.query("CALCulate:AVERage:ALL?")
         values = [v.strip() for v in raw.split(",")]
         if len(values) != 4:
             raise ValueError(f"unexpected CALCulate:AVERage:ALL? response: {raw}")
@@ -375,39 +350,17 @@ class Xdm1000Scpi:
 
 def main() -> None:
     """DC 電圧を 10 回読む最小サンプルである。"""
-    # port = "/dev/ttyUSB0"
     port = "/dev/cu.usbserial-140"
 
     with Xdm1000Scpi(port) as dmm:
-        dmm.remote()
-        try:
-            print("IDN:", dmm.idn())
-            dmm.configure_voltage_dc("AUTO")
-            dmm.set_rate("M")
+        print("IDN:", dmm.idn())
+        dmm.configure_voltage_dc("AUTO")
+        dmm.set_rate("M")
+        time.sleep(0.5)
+
+        for _ in range(10):
+            print(dmm.meas_main())
             time.sleep(0.5)
-
-            for _ in range(10):
-                print(dmm.meas_main())
-                time.sleep(0.5)
-
-        finally:
-            dmm.local()
-
-    with Xdm1000Scpi(port) as dmm:
-        dmm.remote()
-        try:
-            print("IDN:", dmm.idn())
-
-            dmm.configure_voltage_dc("AUTO")
-            dmm.set_rate("M")
-            time.sleep(0.5)
-
-            for _ in range(10):
-                print(dmm.meas_main())
-                time.sleep(0.5)
-
-        finally:
-            dmm.local()
 
 
 if __name__ == "__main__":
