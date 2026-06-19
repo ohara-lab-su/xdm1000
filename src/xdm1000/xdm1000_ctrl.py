@@ -46,6 +46,17 @@ from typing import Any, Literal, Optional
 
 from xdm1000.xdm1000_worker import _Xdm1000Worker
 
+# ------------------------------------------------------------------
+# worker 実行方式
+# ------------------------------------------------------------------
+# 通常運用: 別 process で worker を動かす。
+USE_WORKER_PROCESS = True
+
+# 簡易運用: process を使わず、同一 process 内で worker を直接呼ぶ。
+# start_continuous_meas() / start_statistics_mode() は測定完了まで戻らない。
+# USE_WORKER_PROCESS = False
+
+
 MeasureKind = Literal[
     "voltage_dc",
     "voltage_ac",
