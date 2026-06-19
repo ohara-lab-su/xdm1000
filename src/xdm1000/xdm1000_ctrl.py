@@ -522,7 +522,9 @@ class Xdm1000Ctrl:
         args: Optional[dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> Any:
-        """親プロセスから測定ワーカーへ 1 コマンドを送る。"""
+        """
+        親プロセスから測定ワーカーへ 1 コマンドを送る。
+        """
         req_id = uuid.uuid4().hex
         with self._rpc_lock:
             self._command_q.put({"req_id": req_id, "cmd": name, "args": args or {}})
@@ -755,15 +757,21 @@ class Xdm1000Ctrl:
             timeout=10.0 + max(0.0, settle),
         )
 
+    def wait_until_done(
+        self, dmm: Xdm1000Ctrl, poll_interval: float = 0.2
+    ) -> dict[str, Any]:
+        """running が終わるまで状態を表示しながら待つ。"""
+        while True:
+            state = self.get_state()
+            print("STATE:", state)
+            if not state.get("running", False):
+                return state
+            time.sleep(poll_interval)
 
-def _wait_until_done(dmm: Xdm1000Ctrl, poll_interval: float = 0.2) -> dict[str, Any]:
-    """サンプル main 用に、running が終わるまで状態を表示しながら待つ。"""
-    while True:
-        state = dmm.get_state()
-        print("STATE:", state)
-        if not state.get("running", False):
-            return state
-        time.sleep(poll_interval)
+
+# --------------------------------------
+# テスト用の Function
+# --------------------------------------
 
 
 def _example_main() -> None:
@@ -808,65 +816,62 @@ def _example_main() -> None:
     # RANGE = 1000
 
     RATE = "F"
-
     # RATE = "M"
     # RATE = "S"
 
     SETTLE = 0.2
-
     DURATION = 5.0
-
     INTERVAL = 0.0
 
-    with Xdm1000Ctrl(
+    dmm = Xdm1000Ctrl(
         port=PORT,
         timeout=TIMEOUT,
         baudrate=BAUDRATE,
-    ) as dmm:
+    )
 
-        print("初期 state:", dmm.get_state())
-        print("IDN:", dmm.idn())
+    print("初期 state:", dmm.get_state())
+    print("IDN:", dmm.idn())
 
-        for i in range(10):
-            print("1 shot:")
-            print(
-                dmm.meas_one_shot(
-                    kind=MODE,
-                    range_value=RANGE,
-                    rate=RATE,
-                    settle=SETTLE,
-                )
+    for i in range(10):
+        print("1 shot:")
+        print(
+            dmm.meas_one_shot(
+                kind=MODE,
+                range_value=RANGE,
+                rate=RATE,
+                settle=SETTLE,
             )
+        )
 
-        # print("continuous start:")
-        # print(
-        #     dmm.start_continuous_meas(
-        #         kind=MODE,
-        #         duration=DURATION,
-        #         range_value=RANGE,
-        #         rate=RATE,
-        #         interval=INTERVAL,
-        #         settle=SETTLE,
-        #     )
-        # )
+    # print("continuous start:")
+    # print(
+    #     dmm.start_continuous_meas(
+    #         kind=MODE,
+    #         duration=DURATION,
+    #         range_value=RANGE,
+    #         rate=RATE,
+    #         interval=INTERVAL,
+    #         settle=SETTLE,
+    #     )
+    # )
 
-        _wait_until_done(dmm)
+    dmm.wait_until_done(dmm)
 
-        # result = dmm.get_continuous_result(clear=True)
-        # print(result)
-        # print("statistics start:")
-        # print(
-        #     dmm.start_statistics_mode(
-        #         kind=MODE,
-        #         duration=DURATION,
-        #         range_value=RANGE,
-        #         rate=RATE,
-        #         settle=SETTLE,
-        #     )
-        # )
+    # result = dmm.get_continuous_result(clear=True)
+    # print(result)
+    # print("statistics start:")
+    # print(
+    #     dmm.start_statistics_mode(
+    #         kind=MODE,
+    #         duration=DURATION,
+    #         range_value=RANGE,
+    #         rate=RATE,
+    #         settle=SETTLE,
+    #     )
+    # )
 
-        # _wait_until_done(dmm)
-        print(dmm.get_statistics_result(clear=True))
+    # dmm.until_done(dmm)
+    print(dmm.get_statistics_result(clear=True))
 
 
 if __name__ == "__main__":
