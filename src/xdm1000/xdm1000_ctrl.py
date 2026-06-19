@@ -750,10 +750,6 @@ class XDM1000:
         )
 
 
-# 後方互換名である。
-XDM1241 = XDM1000
-
-
 def _wait_until_done(dmm: XDM1000, poll_interval: float = 0.2) -> dict[str, Any]:
     """サンプル main 用に、running が終わるまで状態を表示しながら待つ。"""
     while True:

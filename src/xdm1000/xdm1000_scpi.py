@@ -37,7 +37,7 @@ class AverageStats:
     count: int
 
 
-class XDM1000:
+class Xdm1000Scpi:
     """OWON XDM1000 に SCPI コマンドを送る低レベル制御クラスである。"""
 
     def __init__(
@@ -70,7 +70,7 @@ class XDM1000:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
         self.close()
 
-    def __enter__(self) -> "XDM1000":
+    def __enter__(self) -> "Xdm1000Scpi":
         """with 文用のエントリである。"""
         return self
 
@@ -91,7 +91,7 @@ class XDM1000:
         self.write(command)
         response = self.ser.readline().decode("ascii", errors="replace").strip()
         if response == "":
-            raise TimeoutError(f"no response from XDM1000: {command}")
+            raise TimeoutError(f"no response from XdmScpi1000: {command}")
         return response
 
     def query_float(self, command: str) -> float:
@@ -378,10 +378,8 @@ def main() -> None:
     # port = "/dev/ttyUSB0"
     port = "/dev/cu.usbserial-140"
 
-    with XDM1000(port) as dmm:
-
+    with Xdm1000Scpi(port) as dmm:
         dmm.remote()
-
         try:
             print("IDN:", dmm.idn())
             dmm.configure_voltage_dc("AUTO")
@@ -395,7 +393,7 @@ def main() -> None:
         finally:
             dmm.local()
 
-    with XDM1000(port) as dmm:
+    with Xdm1000Scpi(port) as dmm:
         dmm.remote()
         try:
             print("IDN:", dmm.idn())
