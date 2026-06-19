@@ -1,691 +1,654 @@
 #!/usr/bin/env python3
-"""XDM1000 / XDM1241 用の上位制御クラスである。
+"""High-level process-based controller for OWON XDM1000 series DMMs.
 
-この層は SCPI コマンドの薄い別名ではなく、測定器として使うための API を提供する。
-低レベル SCPI 実装は xdm1000_scpi.py 側に残す。
+Design:
+- No Python threads.
+- A dedicated worker process owns the serial port for the lifetime of the controller.
+- The parent process provides a server-safe API: state/result methods remain responsive.
+- Measurement/configuration commands are rejected while a long measurement job is running.
+- Long jobs:
+  1. continuous measurement: host-timestamped MEAS1? samples for a specified duration.
+  2. statistics test mode: CALCulate:FUNCtion AVERage and CALCulate:AVERage:ALL?.
+  3. one-shot measurement: single MEAS1? read.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from enum import Enum
-import threading
+import math
+import multiprocessing as mp
+import queue
 import time
-from typing import Callable, Optional, Union
+import traceback
+import uuid
+from dataclasses import dataclass
+from typing import Any, Literal
 
-try:
-    from xdm1000.xdm1000_scpi import XDM1000SCPI
-except ImportError:
-    try:
-        from .xdm1000_scpi import XDM1000SCPI
-    except ImportError:
-        from xdm1000_scpi import XDM1000SCPI
-
-ScpiValue = Union[str, int, float]
-MeasurementCallback = Callable[["MeasurementSample"], None]
+from .xdm1000_scpi import XDM1000SCPI
 
 
-class MeasurementMode(str, Enum):
-    """上位 API で扱う測定種別である。"""
+MeasureKind = Literal[
+    "voltage_dc",
+    "voltage_ac",
+    "current_dc",
+    "current_ac",
+    "resistance",
+    "fresistance",
+    "frequency",
+    "period",
+    "capacitance",
+    "temperature_rtd",
+    "diode",
+    "continuity",
+]
 
-    VOLTAGE_DC = "voltage_dc"
-    VOLTAGE_AC = "voltage_ac"
-    CURRENT_DC = "current_dc"
-    CURRENT_AC = "current_ac"
-    RESISTANCE = "resistance"
-    FRESISTANCE = "fresistance"
-    FREQUENCY = "frequency"
-    PERIOD = "period"
-    CAPACITANCE = "capacitance"
-    TEMPERATURE_RTD = "temperature_rtd"
-    DIODE = "diode"
-    CONTINUITY = "continuity"
+
+class DeviceBusyError(RuntimeError):
+    """Raised when a measurement/configuration request is made while running."""
 
 
-# 旧名互換である。
-MeasureMode = MeasurementMode
+class DeviceWorkerError(RuntimeError):
+    """Raised when the worker process reports an error."""
 
 
 @dataclass(frozen=True)
 class MeasurementConfig:
-    """上位層の測定条件である。"""
+    """Current measurement configuration."""
 
-    mode: str = MeasurementMode.VOLTAGE_DC.value
-    range_value: ScpiValue = "AUTO"
-    rate: str = "M"
-    settle_time: float = 0.2
-    rtd_type: Optional[str] = None
-    temperature_unit: Optional[str] = None
-    continuity_threshold: Optional[ScpiValue] = None
-
-    def to_dict(self) -> dict[str, object]:
-        """JSON 化しやすい dict に変換する。"""
-        return asdict(self)
+    kind: MeasureKind
+    range_value: str | float | int = "AUTO"
+    rate: str = "F"
 
 
-# 旧名互換である。
-MeasureConfig = MeasurementConfig
+def _now_sample_clock(t0_perf: float) -> dict[str, float]:
+    perf = time.perf_counter()
+    return {
+        "host_time": time.time(),
+        "host_perf": perf,
+        "t_rel": perf - t0_perf,
+    }
 
 
-@dataclass(frozen=True)
-class MeasurementSample:
-    """1 点の測定結果である。"""
+def _configure(scpi: XDM1000SCPI, kind: str, range_value: str | float | int) -> None:
+    """Apply measurement configuration to the instrument."""
+    if kind == "voltage_dc":
+        scpi.configure_voltage_dc(range_value)
+    elif kind == "voltage_ac":
+        scpi.configure_voltage_ac(range_value)
+    elif kind == "current_dc":
+        scpi.configure_current_dc(range_value)
+    elif kind == "current_ac":
+        scpi.configure_current_ac(range_value)
+    elif kind == "resistance":
+        scpi.configure_resistance(range_value)
+    elif kind == "fresistance":
+        scpi.configure_fresistance(range_value)
+    elif kind == "frequency":
+        scpi.configure_frequency(range_value)
+    elif kind == "period":
+        scpi.configure_period(range_value)
+    elif kind == "capacitance":
+        scpi.configure_capacitance(range_value)
+    elif kind == "temperature_rtd":
+        scpi.configure_temperature_rtd()
+    elif kind == "diode":
+        scpi.configure_diode()
+    elif kind == "continuity":
+        scpi.configure_continuity()
+    else:
+        raise ValueError(f"Unsupported measurement kind: {kind!r}")
 
-    index: int
-    timestamp: float
-    elapsed: float
-    mode: str
-    value: float
 
-    def to_dict(self) -> dict[str, Union[int, float, str]]:
-        """JSON 化しやすい dict に変換する。"""
-        return asdict(self)
+def _values_stats(values: list[float]) -> dict[str, float | int | None]:
+    if not values:
+        return {
+            "count": 0,
+            "minimum": None,
+            "maximum": None,
+            "average": None,
+            "stdev_population": None,
+        }
+    count = len(values)
+    avg = sum(values) / count
+    var = sum((x - avg) ** 2 for x in values) / count
+    return {
+        "count": count,
+        "minimum": min(values),
+        "maximum": max(values),
+        "average": avg,
+        "stdev_population": math.sqrt(var),
+    }
 
 
-@dataclass(frozen=True)
-class MeasurementStatus:
-    """連続測定状態である。"""
+def _worker_loop(
+    command_q: mp.Queue,
+    response_q: mp.Queue,
+    state: Any,
+    result_store: Any,
+    stop_event: mp.Event,
+    port: str,
+    baudrate: int,
+    timeout: float,
+    write_timeout: float | None,
+    serial_kwargs: dict[str, Any],
+) -> None:
+    """Worker process main loop.
 
-    running: bool
-    config: Optional[MeasurementConfig]
-    interval: Optional[float]
-    started_at: Optional[float]
-    elapsed: float
-    sample_count: int
-    last_sample: Optional[MeasurementSample]
-    last_error: Optional[str]
+    Only this process owns the serial port.
+    """
+    scpi: XDM1000SCPI | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """JSON 化しやすい dict に変換する。"""
-        data = asdict(self)
-        if self.config is not None:
-            data["config"] = self.config.to_dict()
-        if self.last_sample is not None:
-            data["last_sample"] = self.last_sample.to_dict()
-        return data
+    def set_idle() -> None:
+        state["running"] = False
+        state["job_id"] = None
+        state["job_type"] = None
+        state["started_at"] = None
+        state["finished_at"] = None
+        state["error"] = None
+        state["message"] = "idle"
+
+    def set_running(job_id: str, job_type: str) -> None:
+        state["running"] = True
+        state["job_id"] = job_id
+        state["job_type"] = job_type
+        state["started_at"] = time.time()
+        state["finished_at"] = None
+        state["error"] = None
+        state["message"] = "running"
+
+    def finish(message: str = "finished") -> None:
+        state["running"] = False
+        state["finished_at"] = time.time()
+        state["message"] = message
+
+    def fail(exc: BaseException) -> None:
+        state["running"] = False
+        state["finished_at"] = time.time()
+        state["error"] = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+        state["traceback"] = traceback.format_exc()
+        state["message"] = "error"
+
+    try:
+        scpi = XDM1000SCPI(
+            port=port,
+            baudrate=baudrate,
+            timeout=timeout,
+            write_timeout=write_timeout,
+            **serial_kwargs,
+        )
+        set_idle()
+        state["worker_alive"] = True
+        state["port"] = port
+    except BaseException as exc:
+        state["worker_alive"] = False
+        state["error"] = repr(exc)
+        state["traceback"] = traceback.format_exc()
+        return
+
+    while True:
+        try:
+            cmd = command_q.get()
+            req_id = cmd.get("req_id")
+            name = cmd.get("cmd")
+            args = cmd.get("args", {})
+            try:
+                if name == "shutdown":
+                    response_q.put({"req_id": req_id, "ok": True, "result": None})
+                    break
+
+                if name == "idn":
+                    response_q.put({"req_id": req_id, "ok": True, "result": scpi.idn()})
+
+                elif name == "remote":
+                    scpi.remote()
+                    response_q.put({"req_id": req_id, "ok": True, "result": None})
+
+                elif name == "local":
+                    scpi.local()
+                    response_q.put({"req_id": req_id, "ok": True, "result": None})
+
+                elif name == "reset":
+                    scpi.reset()
+                    response_q.put({"req_id": req_id, "ok": True, "result": None})
+
+                elif name == "set_measurement_mode":
+                    _configure(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    scpi.set_rate(args.get("rate", "F"))
+                    state["measurement_kind"] = args["kind"]
+                    state["range_value"] = args.get("range_value", "AUTO")
+                    state["rate"] = args.get("rate", "F")
+                    response_q.put({"req_id": req_id, "ok": True, "result": dict(args)})
+
+                elif name == "one_shot":
+                    _configure(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    scpi.set_rate(args.get("rate", "F"))
+                    t0 = time.perf_counter()
+                    before = _now_sample_clock(t0)
+                    value = scpi.measure_main()
+                    after = _now_sample_clock(t0)
+                    response_q.put({
+                        "req_id": req_id,
+                        "ok": True,
+                        "result": {
+                            "kind": args["kind"],
+                            "range_value": args.get("range_value", "AUTO"),
+                            "rate": args.get("rate", "F"),
+                            "value": value,
+                            "host_time_start": before["host_time"],
+                            "host_time_end": after["host_time"],
+                            "host_elapsed": after["host_perf"] - before["host_perf"],
+                        },
+                    })
+
+                elif name == "start_continuous":
+                    job_id = args["job_id"]
+                    duration = float(args["duration"])
+                    interval = float(args.get("interval", 0.0))
+                    if duration <= 0:
+                        raise ValueError("duration must be positive.")
+                    set_running(job_id, "continuous")
+                    stop_event.clear()
+                    _configure(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    scpi.set_rate(args.get("rate", "F"))
+                    state["measurement_kind"] = args["kind"]
+                    state["range_value"] = args.get("range_value", "AUTO")
+                    state["rate"] = args.get("rate", "F")
+                    state["duration"] = duration
+                    state["interval"] = interval
+                    response_q.put({"req_id": req_id, "ok": True, "result": {"job_id": job_id}})
+
+                    samples: list[dict[str, Any]] = []
+                    t0 = time.perf_counter()
+                    deadline = t0 + duration
+                    idx = 0
+                    try:
+                        while time.perf_counter() < deadline and not stop_event.is_set():
+                            sample_start = _now_sample_clock(t0)
+                            raw = scpi.measure_main()
+                            sample_end = _now_sample_clock(t0)
+                            samples.append({
+                                "index": idx,
+                                "kind": args["kind"],
+                                "value": raw,
+                                "host_time_start": sample_start["host_time"],
+                                "host_time_end": sample_end["host_time"],
+                                "t_rel_start": sample_start["t_rel"],
+                                "t_rel_end": sample_end["t_rel"],
+                                "read_elapsed": sample_end["host_perf"] - sample_start["host_perf"],
+                            })
+                            idx += 1
+                            state["sample_count"] = idx
+                            state["last_value"] = raw
+                            state["last_host_time"] = sample_end["host_time"]
+                            if interval > 0:
+                                sleep_until = sample_end["host_perf"] + interval
+                                while time.perf_counter() < sleep_until:
+                                    if stop_event.is_set():
+                                        break
+                                    time.sleep(min(0.005, sleep_until - time.perf_counter()))
+                    except BaseException as exc:
+                        result_store["continuous"] = {
+                            "job_id": job_id,
+                            "ok": False,
+                            "error": repr(exc),
+                            "traceback": traceback.format_exc(),
+                            "samples": samples,
+                        }
+                        fail(exc)
+                    else:
+                        values = [float(s["value"]) for s in samples]
+                        result_store["continuous"] = {
+                            "job_id": job_id,
+                            "ok": True,
+                            "stopped": stop_event.is_set(),
+                            "kind": args["kind"],
+                            "range_value": args.get("range_value", "AUTO"),
+                            "rate": args.get("rate", "F"),
+                            "duration_requested": duration,
+                            "interval_requested": interval,
+                            "samples": samples,
+                            "stats": _values_stats(values),
+                            "started_at": state.get("started_at"),
+                            "finished_at": time.time(),
+                        }
+                        finish("stopped" if stop_event.is_set() else "finished")
+
+                elif name == "start_statistics":
+                    job_id = args["job_id"]
+                    duration = float(args["duration"])
+                    if duration <= 0:
+                        raise ValueError("duration must be positive.")
+                    set_running(job_id, "statistics")
+                    stop_event.clear()
+                    _configure(scpi, args["kind"], args.get("range_value", "AUTO"))
+                    scpi.set_rate(args.get("rate", "F"))
+                    state["measurement_kind"] = args["kind"]
+                    state["range_value"] = args.get("range_value", "AUTO")
+                    state["rate"] = args.get("rate", "F")
+                    state["duration"] = duration
+                    response_q.put({"req_id": req_id, "ok": True, "result": {"job_id": job_id}})
+
+                    try:
+                        # Test implementation. The exact reset/start semantics of the XDM1000
+                        # statistics engine are firmware-dependent and must be verified on hardware.
+                        scpi.set_calc_function("AVERage")
+                        t0 = time.perf_counter()
+                        deadline = t0 + duration
+                        while time.perf_counter() < deadline and not stop_event.is_set():
+                            time.sleep(min(0.05, deadline - time.perf_counter()))
+                        stats = scpi.get_average_all()
+                        result_store["statistics"] = {
+                            "job_id": job_id,
+                            "ok": True,
+                            "stopped": stop_event.is_set(),
+                            "kind": args["kind"],
+                            "range_value": args.get("range_value", "AUTO"),
+                            "rate": args.get("rate", "F"),
+                            "duration_requested": duration,
+                            "stats": {
+                                "minimum": stats.minimum,
+                                "maximum": stats.maximum,
+                                "average": stats.average,
+                                "count": stats.count,
+                            },
+                            "note": (
+                                "Statistics mode is a test wrapper around "
+                                "CALCulate:FUNCtion AVERage and CALCulate:AVERage:ALL?. "
+                                "The statistics reset/start timing must be verified on the device."
+                            ),
+                            "started_at": state.get("started_at"),
+                            "finished_at": time.time(),
+                        }
+                        finish("stopped" if stop_event.is_set() else "finished")
+                    except BaseException as exc:
+                        result_store["statistics"] = {
+                            "job_id": job_id,
+                            "ok": False,
+                            "error": repr(exc),
+                            "traceback": traceback.format_exc(),
+                        }
+                        fail(exc)
+
+                else:
+                    raise ValueError(f"Unknown worker command: {name!r}")
+
+            except BaseException as exc:
+                response_q.put({
+                    "req_id": req_id,
+                    "ok": False,
+                    "error": repr(exc),
+                    "traceback": traceback.format_exc(),
+                })
+        except BaseException:
+            state["worker_loop_error"] = traceback.format_exc()
+
+    try:
+        if scpi is not None:
+            scpi.close()
+    finally:
+        state["worker_alive"] = False
 
 
 class XDM1000:
-    """XDM1000 / XDM1241 の上位制御クラスである。
+    """High-level controller for server use.
 
-    インスタンス生成時に接続を開き、サーバープロセスが生きている間は接続を維持する。
-    上位 API は測定条件の設定、1shot 測定、連続測定を中心にする。
+    The public API separates three measurement families:
+
+    1. one_shot:
+       blocking single read. Rejected while a long job is running.
+
+    2. continuous:
+       process-side repeated MEAS1? acquisition for a specified duration.
+       Samples are host timestamped and stored in the worker result buffer.
+
+    3. statistics:
+       test wrapper around the instrument CALCulate:AVERage statistics function.
+       This is intentionally not treated as a guaranteed duration-average until
+       the firmware behavior is verified.
     """
 
     def __init__(
         self,
         port: str,
-        timeout: float = 1.0,
         baudrate: int = 115200,
-        logger=None,
+        timeout: float = 2.0,
+        write_timeout: float | None = 2.0,
+        **serial_kwargs: Any,
     ) -> None:
-        """低レベル SCPI クラスと同じ引数で初期化し、即座に接続を開く。"""
         self.port = port
-        self.timeout = timeout
         self.baudrate = baudrate
-        self._logger = logger
+        self.timeout = timeout
+        self.write_timeout = write_timeout
+        self.serial_kwargs = dict(serial_kwargs)
 
-        self._scpi: Optional[XDM1000SCPI] = None
-        self._lock = threading.RLock()
+        self._manager = mp.Manager()
+        self._state = self._manager.dict()
+        self._result_store = self._manager.dict()
+        self._command_q: mp.Queue = mp.Queue()
+        self._response_q: mp.Queue = mp.Queue()
+        self._stop_event = mp.Event()
+        self._rpc_lock = mp.Lock()
 
-        self._config = MeasurementConfig()
-        self._continuous_thread: Optional[threading.Thread] = None
-        self._continuous_stop = threading.Event()
-        self._continuous_interval: Optional[float] = None
-        self._continuous_started_at: Optional[float] = None
-        self._continuous_samples: list[MeasurementSample] = []
-        self._continuous_last_error: Optional[str] = None
-        self._continuous_callback: Optional[MeasurementCallback] = None
-
-        self.open()
+        self._process = mp.Process(
+            target=_worker_loop,
+            kwargs={
+                "command_q": self._command_q,
+                "response_q": self._response_q,
+                "state": self._state,
+                "result_store": self._result_store,
+                "stop_event": self._stop_event,
+                "port": port,
+                "baudrate": baudrate,
+                "timeout": timeout,
+                "write_timeout": write_timeout,
+                "serial_kwargs": self.serial_kwargs,
+            },
+            daemon=True,
+        )
+        self._process.start()
 
     # ------------------------------------------------------------------
-    # lifetime
+    # Internal RPC
     # ------------------------------------------------------------------
+    def _is_running(self) -> bool:
+        return bool(self._state.get("running", False))
 
-    def open(self) -> None:
-        """シリアルポートを開く。すでに開いている場合は何もしない。"""
-        with self._lock:
-            if self._scpi is not None:
-                return
-            self._scpi = XDM1000SCPI(
-                port=self.port,
-                timeout=self.timeout,
-                baudrate=self.baudrate,
-                logger=self._logger,
+    def _require_not_running(self) -> None:
+        if self._is_running():
+            raise DeviceBusyError(
+                f"Device is running: job_type={self._state.get('job_type')}, "
+                f"job_id={self._state.get('job_id')}"
             )
 
-    def close(self) -> None:
-        """連続測定を停止し、シリアルポートを閉じる。"""
-        self.stop_continuous_measurement()
-        with self._lock:
-            if self._scpi is None:
-                return
-            self._scpi.close()
-            self._scpi = None
+    def _rpc(self, name: str, args: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        req_id = uuid.uuid4().hex
+        with self._rpc_lock:
+            self._command_q.put({"req_id": req_id, "cmd": name, "args": args or {}})
+            deadline = None if timeout is None else time.time() + timeout
+            while True:
+                remaining = None if deadline is None else max(0.0, deadline - time.time())
+                if deadline is not None and remaining <= 0:
+                    raise TimeoutError(f"Timeout waiting for worker response to {name!r}.")
+                try:
+                    resp = self._response_q.get(timeout=remaining)
+                except queue.Empty as exc:
+                    raise TimeoutError(f"Timeout waiting for worker response to {name!r}.") from exc
+                if resp.get("req_id") != req_id:
+                    # With the rpc lock this should not occur. Treat as protocol error.
+                    raise RuntimeError(f"Unexpected worker response: {resp!r}")
+                if resp.get("ok"):
+                    return resp.get("result")
+                raise DeviceWorkerError(f"{resp.get('error')}\n{resp.get('traceback', '')}")
 
-    def disconnect(self) -> None:
-        """サーバー停止時に呼ばれる解放用エイリアスである。"""
-        self.close()
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+    def close(self) -> None:
+        """Shutdown the worker process."""
+        if self._process.is_alive():
+            try:
+                self._rpc("shutdown", timeout=2.0)
+            except Exception:
+                pass
+            self._process.join(timeout=2.0)
+            if self._process.is_alive():
+                self._process.terminate()
+                self._process.join(timeout=2.0)
+        self._manager.shutdown()
 
     def __enter__(self) -> "XDM1000":
-        """with 文用のエントリである。"""
-        self.open()
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
-        """with 文終了時に接続を閉じる。"""
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         self.close()
 
-    @property
-    def is_open(self) -> bool:
-        """シリアルポートが開いているかを返す。"""
-        return self._scpi is not None
+    # ------------------------------------------------------------------
+    # State/result API allowed during long measurements
+    # ------------------------------------------------------------------
+    def get_state(self) -> dict[str, Any]:
+        """Return current server-side measurement state."""
+        state = dict(self._state)
+        state["process_alive"] = self._process.is_alive()
+        return state
 
-    def _require_scpi(self) -> XDM1000SCPI:
-        """低レベル SCPI インスタンスを返す。閉じていれば例外を投げる。"""
-        if self._scpi is None:
-            raise RuntimeError("XDM1000 is not open")
-        return self._scpi
+    def is_running(self) -> bool:
+        return self._is_running()
+
+    def stop_job(self) -> dict[str, Any]:
+        """Request cooperative stop of a long-running job."""
+        self._stop_event.set()
+        return self.get_state()
+
+    def get_continuous_result(self, clear: bool = False) -> dict[str, Any] | None:
+        result = self._result_store.get("continuous")
+        if clear and "continuous" in self._result_store:
+            del self._result_store["continuous"]
+        return result
+
+    def get_statistics_result(self, clear: bool = False) -> dict[str, Any] | None:
+        result = self._result_store.get("statistics")
+        if clear and "statistics" in self._result_store:
+            del self._result_store["statistics"]
+        return result
 
     # ------------------------------------------------------------------
-    # basic controls
+    # Direct commands rejected while running
     # ------------------------------------------------------------------
-
     def idn(self) -> str:
-        """機器識別文字列を取得する。"""
-        with self._lock:
-            return self._require_scpi().idn()
+        self._require_not_running()
+        return self._rpc("idn", timeout=5.0)
 
     def remote(self) -> None:
-        """機器をリモート操作状態にする。"""
-        with self._lock:
-            self._require_scpi().remote()
+        self._require_not_running()
+        self._rpc("remote", timeout=5.0)
 
     def local(self) -> None:
-        """機器をローカル操作状態に戻す。"""
-        with self._lock:
-            self._require_scpi().local()
+        self._require_not_running()
+        self._rpc("local", timeout=5.0)
 
     def reset(self) -> None:
-        """機器設定をリセットする。"""
-        with self._lock:
-            self._require_scpi().reset()
-
-    def set_beeper(self, enabled: bool) -> None:
-        """ブザーの ON/OFF を設定する。"""
-        with self._lock:
-            self._require_scpi().set_beeper(enabled)
-
-    def get_beeper(self) -> bool:
-        """ブザー状態を取得する。"""
-        with self._lock:
-            return self._require_scpi().get_beeper()
-
-    # ------------------------------------------------------------------
-    # measurement mode / range / rate
-    # ------------------------------------------------------------------
+        self._require_not_running()
+        self._rpc("reset", timeout=10.0)
 
     def set_measurement_mode(
         self,
-        mode: Union[MeasurementMode, str],
-        range_value: Optional[ScpiValue] = None,
-        rate: Optional[str] = None,
-        settle_time: Optional[float] = None,
-        rtd_type: Optional[str] = None,
-        temperature_unit: Optional[str] = None,
-        continuity_threshold: Optional[ScpiValue] = None,
-    ) -> dict[str, object]:
-        """測定モードを設定する。
-
-        range_value/rate/settle_time を省略した場合は現在の上位設定を維持する。
-        """
-        current = self._config
-        config = MeasurementConfig(
-            mode=self._normalize_mode(mode).value,
-            range_value=current.range_value if range_value is None else range_value,
-            rate=current.rate if rate is None else rate,
-            settle_time=current.settle_time if settle_time is None else float(settle_time),
-            rtd_type=current.rtd_type if rtd_type is None else rtd_type,
-            temperature_unit=current.temperature_unit if temperature_unit is None else temperature_unit,
-            continuity_threshold=(
-                current.continuity_threshold if continuity_threshold is None else continuity_threshold
-            ),
+        kind: MeasureKind,
+        range_value: str | float | int = "AUTO",
+        rate: str = "F",
+    ) -> dict[str, Any]:
+        """Set DMM measurement function/range/rate."""
+        self._require_not_running()
+        return self._rpc(
+            "set_measurement_mode",
+            {"kind": kind, "range_value": range_value, "rate": rate},
+            timeout=10.0,
         )
-        self._apply_config(config)
-        return config.to_dict()
-
-    def get_measurement_mode(self) -> str:
-        """現在の上位測定モードを返す。"""
-        return self._config.mode
-
-    def set_range(self, range_value: ScpiValue) -> dict[str, object]:
-        """現在の測定モードのレンジ値を設定する。"""
-        return self.set_measurement_config(range_value=range_value)
-
-    def get_range(self) -> ScpiValue:
-        """上位層が保持しているレンジ値を返す。"""
-        return self._config.range_value
-
-    def set_rate(self, rate: str) -> dict[str, object]:
-        """測定速度を設定する。"""
-        return self.set_measurement_config(rate=rate)
-
-    def get_rate(self) -> str:
-        """機器から測定速度を取得する。"""
-        with self._lock:
-            return self._require_scpi().get_rate()
-
-    def set_measurement_config(
-        self,
-        mode: Optional[Union[MeasurementMode, str]] = None,
-        range_value: Optional[ScpiValue] = None,
-        rate: Optional[str] = None,
-        settle_time: Optional[float] = None,
-        rtd_type: Optional[str] = None,
-        temperature_unit: Optional[str] = None,
-        continuity_threshold: Optional[ScpiValue] = None,
-    ) -> dict[str, object]:
-        """測定条件をまとめて設定する。"""
-        current = self._config
-        mode_value = current.mode if mode is None else self._normalize_mode(mode).value
-        config = MeasurementConfig(
-            mode=mode_value,
-            range_value=current.range_value if range_value is None else range_value,
-            rate=current.rate if rate is None else rate,
-            settle_time=current.settle_time if settle_time is None else float(settle_time),
-            rtd_type=current.rtd_type if rtd_type is None else rtd_type,
-            temperature_unit=current.temperature_unit if temperature_unit is None else temperature_unit,
-            continuity_threshold=(
-                current.continuity_threshold if continuity_threshold is None else continuity_threshold
-            ),
-        )
-        self._apply_config(config)
-        return config.to_dict()
-
-    def get_measurement_config(self) -> dict[str, object]:
-        """現在の上位測定条件を返す。"""
-        return self._config.to_dict()
-
-    def configure_measurement(
-        self,
-        mode: Union[MeasurementMode, str],
-        range_value: ScpiValue = "AUTO",
-        rate: str = "M",
-        settle_time: float = 0.2,
-        rtd_type: Optional[str] = None,
-    ) -> MeasurementConfig:
-        """旧 API 互換の測定条件設定である。"""
-        config = MeasurementConfig(
-            mode=self._normalize_mode(mode).value,
-            range_value=range_value,
-            rate=rate,
-            settle_time=float(settle_time),
-            rtd_type=rtd_type,
-        )
-        self._apply_config(config)
-        return config
-
-    def _apply_config(self, config: MeasurementConfig) -> None:
-        """MeasurementConfig を実機へ反映する。"""
-        with self._lock:
-            scpi = self._require_scpi()
-            mode = MeasurementMode(config.mode)
-            if mode is MeasurementMode.VOLTAGE_DC:
-                scpi.configure_voltage_dc(config.range_value)
-            elif mode is MeasurementMode.VOLTAGE_AC:
-                scpi.configure_voltage_ac(config.range_value)
-            elif mode is MeasurementMode.CURRENT_DC:
-                scpi.configure_current_dc(config.range_value)
-            elif mode is MeasurementMode.CURRENT_AC:
-                scpi.configure_current_ac(config.range_value)
-            elif mode is MeasurementMode.RESISTANCE:
-                scpi.configure_resistance(config.range_value)
-            elif mode is MeasurementMode.FRESISTANCE:
-                scpi.configure_fresistance(config.range_value)
-            elif mode is MeasurementMode.FREQUENCY:
-                scpi.configure_frequency()
-            elif mode is MeasurementMode.PERIOD:
-                scpi.configure_period()
-            elif mode is MeasurementMode.CAPACITANCE:
-                scpi.configure_capacitance(config.range_value)
-            elif mode is MeasurementMode.TEMPERATURE_RTD:
-                scpi.configure_temperature_rtd(config.rtd_type)
-                if config.temperature_unit is not None:
-                    scpi.set_temperature_unit(config.temperature_unit)
-            elif mode is MeasurementMode.DIODE:
-                scpi.configure_diode()
-            elif mode is MeasurementMode.CONTINUITY:
-                scpi.configure_continuity()
-                if config.continuity_threshold is not None:
-                    scpi.set_continuity_threshold(config.continuity_threshold)
-            else:
-                raise ValueError(f"unsupported measurement mode: {mode}")
-
-            if config.rate:
-                scpi.set_rate(config.rate)
-
-            self._config = config
-
-        if config.settle_time > 0:
-            time.sleep(config.settle_time)
-
-    @staticmethod
-    def _normalize_mode(mode: Union[MeasurementMode, str]) -> MeasurementMode:
-        """測定種別を MeasurementMode に正規化する。"""
-        if isinstance(mode, MeasurementMode):
-            return mode
-        value = str(mode).strip().lower().replace("-", "_").replace(":", "_").replace(" ", "_")
-        aliases = {
-            "v": MeasurementMode.VOLTAGE_DC,
-            "volt": MeasurementMode.VOLTAGE_DC,
-            "voltage": MeasurementMode.VOLTAGE_DC,
-            "vdc": MeasurementMode.VOLTAGE_DC,
-            "dcv": MeasurementMode.VOLTAGE_DC,
-            "volt_dc": MeasurementMode.VOLTAGE_DC,
-            "voltage_dc": MeasurementMode.VOLTAGE_DC,
-            "vac": MeasurementMode.VOLTAGE_AC,
-            "acv": MeasurementMode.VOLTAGE_AC,
-            "volt_ac": MeasurementMode.VOLTAGE_AC,
-            "voltage_ac": MeasurementMode.VOLTAGE_AC,
-            "i": MeasurementMode.CURRENT_DC,
-            "curr": MeasurementMode.CURRENT_DC,
-            "current": MeasurementMode.CURRENT_DC,
-            "idc": MeasurementMode.CURRENT_DC,
-            "dci": MeasurementMode.CURRENT_DC,
-            "current_dc": MeasurementMode.CURRENT_DC,
-            "iac": MeasurementMode.CURRENT_AC,
-            "aci": MeasurementMode.CURRENT_AC,
-            "current_ac": MeasurementMode.CURRENT_AC,
-            "ohm": MeasurementMode.RESISTANCE,
-            "res": MeasurementMode.RESISTANCE,
-            "resistance": MeasurementMode.RESISTANCE,
-            "fres": MeasurementMode.FRESISTANCE,
-            "fresistance": MeasurementMode.FRESISTANCE,
-            "4w": MeasurementMode.FRESISTANCE,
-            "4w_resistance": MeasurementMode.FRESISTANCE,
-            "freq": MeasurementMode.FREQUENCY,
-            "frequency": MeasurementMode.FREQUENCY,
-            "period": MeasurementMode.PERIOD,
-            "cap": MeasurementMode.CAPACITANCE,
-            "capacitance": MeasurementMode.CAPACITANCE,
-            "temp": MeasurementMode.TEMPERATURE_RTD,
-            "temperature": MeasurementMode.TEMPERATURE_RTD,
-            "temperature_rtd": MeasurementMode.TEMPERATURE_RTD,
-            "diode": MeasurementMode.DIODE,
-            "continuity": MeasurementMode.CONTINUITY,
-            "cont": MeasurementMode.CONTINUITY,
-        }
-        try:
-            return aliases[value]
-        except KeyError as exc:
-            raise ValueError(f"unsupported measurement mode: {mode}") from exc
-
-    # ------------------------------------------------------------------
-    # one-shot measurement
-    # ------------------------------------------------------------------
-
-    def read(self) -> float:
-        """現在の測定設定のまま、主表示を 1 点読む。"""
-        with self._lock:
-            return self._require_scpi().measure_main()
-
-    def meas(self) -> float:
-        """現在の測定設定のまま、主表示を 1 点読む。read() の別名である。"""
-        return self.read()
 
     def measure_one_shot(
         self,
-        mode: Optional[Union[MeasurementMode, str]] = None,
-        range_value: Optional[ScpiValue] = None,
-        rate: Optional[str] = None,
-        settle_time: Optional[float] = None,
-        rtd_type: Optional[str] = None,
-        temperature_unit: Optional[str] = None,
-        continuity_threshold: Optional[ScpiValue] = None,
-    ) -> float:
-        """必要なら測定条件を変更してから 1 点測定する。"""
-        if any(v is not None for v in [mode, range_value, rate, settle_time, rtd_type, temperature_unit, continuity_threshold]):
-            self.set_measurement_config(
-                mode=mode,
-                range_value=range_value,
-                rate=rate,
-                settle_time=settle_time,
-                rtd_type=rtd_type,
-                temperature_unit=temperature_unit,
-                continuity_threshold=continuity_threshold,
-            )
-        return self.read()
-
-    def measure_voltage_dc(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """DC 電圧を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.VOLTAGE_DC, range_value, rate, settle_time)
-
-    def measure_voltage_ac(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """AC 電圧を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.VOLTAGE_AC, range_value, rate, settle_time)
-
-    def measure_current_dc(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """DC 電流を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.CURRENT_DC, range_value, rate, settle_time)
-
-    def measure_current_ac(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """AC 電流を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.CURRENT_AC, range_value, rate, settle_time)
-
-    def measure_resistance(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """2 線式抵抗を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.RESISTANCE, range_value, rate, settle_time)
-
-    def measure_fresistance(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """4 線式抵抗を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.FRESISTANCE, range_value, rate, settle_time)
-
-    def measure_frequency(self, rate: str = "M", settle_time: float = 0.2) -> float:
-        """周波数を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.FREQUENCY, rate=rate, settle_time=settle_time)
-
-    def measure_period(self, rate: str = "M", settle_time: float = 0.2) -> float:
-        """周期を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.PERIOD, rate=rate, settle_time=settle_time)
-
-    def measure_capacitance(self, range_value: ScpiValue = "AUTO", rate: str = "M", settle_time: float = 0.2) -> float:
-        """静電容量を 1 点測定する。"""
-        return self.measure_one_shot(MeasurementMode.CAPACITANCE, range_value, rate, settle_time)
-
-    def measure_temperature_rtd(
-        self,
-        rtd_type: Optional[str] = None,
-        unit: Optional[str] = None,
-        rate: str = "M",
-        settle_time: float = 0.2,
-    ) -> float:
-        """RTD 温度を 1 点測定する。"""
-        return self.measure_one_shot(
-            MeasurementMode.TEMPERATURE_RTD,
-            rate=rate,
-            settle_time=settle_time,
-            rtd_type=rtd_type,
-            temperature_unit=unit,
+        kind: MeasureKind,
+        range_value: str | float | int = "AUTO",
+        rate: str = "F",
+    ) -> dict[str, Any]:
+        """Perform one blocking single measurement."""
+        self._require_not_running()
+        return self._rpc(
+            "one_shot",
+            {"kind": kind, "range_value": range_value, "rate": rate},
+            timeout=10.0,
         )
 
-    # ------------------------------------------------------------------
-    # continuous measurement
-    # ------------------------------------------------------------------
+    # Short aliases
+    def meas(
+        self,
+        kind: MeasureKind = "voltage_dc",
+        range_value: str | float | int = "AUTO",
+        rate: str = "F",
+    ) -> dict[str, Any]:
+        return self.measure_one_shot(kind=kind, range_value=range_value, rate=rate)
 
+    def measure_voltage_dc(self, range_value: str | float | int = "AUTO", rate: str = "F") -> dict[str, Any]:
+        return self.measure_one_shot("voltage_dc", range_value, rate)
+
+    def measure_current_dc(self, range_value: str | float | int = "AUTO", rate: str = "F") -> dict[str, Any]:
+        return self.measure_one_shot("current_dc", range_value, rate)
+
+    # ------------------------------------------------------------------
+    # Long measurement jobs
+    # ------------------------------------------------------------------
     def start_continuous_measurement(
         self,
-        mode: Optional[Union[MeasurementMode, str]] = None,
-        range_value: Optional[ScpiValue] = None,
-        rate: Optional[str] = None,
-        interval: float = 0.5,
-        duration: Optional[float] = None,
-        max_samples: Optional[int] = None,
-        settle_time: Optional[float] = None,
-        rtd_type: Optional[str] = None,
-        temperature_unit: Optional[str] = None,
-        continuity_threshold: Optional[ScpiValue] = None,
-        clear_buffer: bool = True,
-        callback: Optional[MeasurementCallback] = None,
-    ) -> dict[str, object]:
-        """バックグラウンド連続測定を開始する。"""
-        if interval <= 0:
-            raise ValueError("interval must be positive")
-        if duration is not None and duration <= 0:
-            raise ValueError("duration must be positive or None")
-        if max_samples is not None and max_samples <= 0:
-            raise ValueError("max_samples must be positive or None")
+        kind: MeasureKind,
+        duration: float,
+        range_value: str | float | int = "AUTO",
+        rate: str = "F",
+        interval: float = 0.0,
+    ) -> dict[str, Any]:
+        """Start process-side repeated MEAS1? acquisition.
 
-        self.stop_continuous_measurement()
-        if any(v is not None for v in [mode, range_value, rate, settle_time, rtd_type, temperature_unit, continuity_threshold]):
-            self.set_measurement_config(
-                mode=mode,
-                range_value=range_value,
-                rate=rate,
-                settle_time=settle_time,
-                rtd_type=rtd_type,
-                temperature_unit=temperature_unit,
-                continuity_threshold=continuity_threshold,
-            )
+        interval=0 means acquire as fast as the instrument/serial link allows.
+        The method returns immediately after the worker has accepted the job.
+        """
+        self._require_not_running()
+        job_id = uuid.uuid4().hex
+        return self._rpc(
+            "start_continuous",
+            {
+                "job_id": job_id,
+                "kind": kind,
+                "duration": duration,
+                "range_value": range_value,
+                "rate": rate,
+                "interval": interval,
+            },
+            timeout=10.0,
+        )
 
-        with self._lock:
-            if clear_buffer:
-                self._continuous_samples = []
-            self._continuous_interval = float(interval)
-            self._continuous_started_at = time.time()
-            self._continuous_last_error = None
-            self._continuous_callback = callback
-            self._continuous_stop.clear()
-            self._continuous_thread = threading.Thread(
-                target=self._continuous_loop,
-                kwargs={"duration": duration, "max_samples": max_samples},
-                name="XDM1000ContinuousMeasurement",
-                daemon=True,
-            )
-            self._continuous_thread.start()
-        return self.get_continuous_status()
+    def start_statistics_mode(
+        self,
+        kind: MeasureKind,
+        duration: float,
+        range_value: str | float | int = "AUTO",
+        rate: str = "F",
+    ) -> dict[str, Any]:
+        """Start test statistics job using CALCulate:AVERage:ALL?.
 
-    def _continuous_loop(self, duration: Optional[float], max_samples: Optional[int]) -> None:
-        """バックグラウンド連続測定ループである。"""
-        assert self._continuous_started_at is not None
-        assert self._continuous_interval is not None
-        started_at = self._continuous_started_at
-        next_time = time.monotonic()
-        index = 0
-
-        while not self._continuous_stop.is_set():
-            timestamp = time.time()
-            elapsed = timestamp - started_at
-            if duration is not None and elapsed >= duration:
-                break
-            if max_samples is not None and index >= max_samples:
-                break
-            try:
-                with self._lock:
-                    mode = self._config.mode
-                    value = self._require_scpi().measure_main()
-                sample = MeasurementSample(
-                    index=index,
-                    timestamp=timestamp,
-                    elapsed=elapsed,
-                    mode=mode,
-                    value=value,
-                )
-                callback = self._continuous_callback
-                with self._lock:
-                    self._continuous_samples.append(sample)
-                    self._continuous_last_error = None
-                if callback is not None:
-                    callback(sample)
-                index += 1
-            except Exception as exc:  # noqa: BLE001
-                with self._lock:
-                    self._continuous_last_error = f"{type(exc).__name__}: {exc}"
-                break
-
-            next_time += self._continuous_interval
-            sleep_time = next_time - time.monotonic()
-            if sleep_time > 0:
-                self._continuous_stop.wait(sleep_time)
-            else:
-                next_time = time.monotonic()
-
-        self._continuous_stop.set()
-
-    def stop_continuous_measurement(self, timeout: float = 5.0) -> dict[str, object]:
-        """バックグラウンド連続測定を停止する。"""
-        thread = self._continuous_thread
-        if thread is not None and thread.is_alive():
-            self._continuous_stop.set()
-            thread.join(timeout=timeout)
-        with self._lock:
-            if self._continuous_thread is not None and not self._continuous_thread.is_alive():
-                self._continuous_thread = None
-        return self.get_continuous_status()
-
-    def get_continuous_status(self) -> dict[str, object]:
-        """連続測定状態を返す。"""
-        with self._lock:
-            running = self._continuous_thread is not None and self._continuous_thread.is_alive()
-            now = time.time()
-            elapsed = 0.0
-            if self._continuous_started_at is not None:
-                elapsed = max(0.0, now - self._continuous_started_at)
-            last_sample = self._continuous_samples[-1] if self._continuous_samples else None
-            status = MeasurementStatus(
-                running=running,
-                config=self._config,
-                interval=self._continuous_interval,
-                started_at=self._continuous_started_at,
-                elapsed=elapsed,
-                sample_count=len(self._continuous_samples),
-                last_sample=last_sample,
-                last_error=self._continuous_last_error,
-            )
-        return status.to_dict()
-
-    def get_continuous_samples(self, limit: Optional[int] = None, clear: bool = False) -> list[dict[str, Union[int, float, str]]]:
-        """連続測定バッファを返す。"""
-        with self._lock:
-            if limit is None:
-                samples = list(self._continuous_samples)
-            else:
-                samples = list(self._continuous_samples[-int(limit):])
-            if clear:
-                self._continuous_samples = []
-        return [sample.to_dict() for sample in samples]
-
-    def clear_continuous_samples(self) -> None:
-        """連続測定バッファを空にする。"""
-        with self._lock:
-            self._continuous_samples = []
-
-    # 旧名互換である。
-    start_measurement = start_continuous_measurement
-    stop_measurement = stop_continuous_measurement
-    get_measurement_status = get_continuous_status
-    get_measurement_samples = get_continuous_samples
-    clear_measurement_samples = clear_continuous_samples
-
-    # ------------------------------------------------------------------
-    # low-level escape hatch
-    # ------------------------------------------------------------------
-
-    def raw_write(self, command: str) -> None:
-        """低レベル SCPI コマンドをそのまま送る。"""
-        with self._lock:
-            self._require_scpi().write(command)
-
-    def raw_query(self, command: str) -> str:
-        """低レベル SCPI クエリをそのまま送る。"""
-        with self._lock:
-            return self._require_scpi().query(command)
-
-    @property
-    def scpi(self) -> XDM1000SCPI:
-        """低レベル SCPI ドライバを返す。サーバー公開用ではなくローカルデバッグ用である。"""
-        return self._require_scpi()
+        This is a test mode. It must not be treated as a guaranteed time-window
+        average until the statistics reset/start semantics are verified on the
+        physical XDM1000/XDM1241.
+        """
+        self._require_not_running()
+        job_id = uuid.uuid4().hex
+        return self._rpc(
+            "start_statistics",
+            {
+                "job_id": job_id,
+                "kind": kind,
+                "duration": duration,
+                "range_value": range_value,
+                "rate": rate,
+            },
+            timeout=10.0,
+        )
 
 
-# 機種名で使いたい場合のエイリアスである。
 XDM1241 = XDM1000
