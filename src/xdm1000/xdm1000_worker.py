@@ -81,7 +81,8 @@ def _calc_stats(values: List[float]) -> Dict[str, Union[float, int, None]]:
 
 
 class _Xdm1000Worker:
-    """子プロセス側で SCPI 実行を担当する worker 実体である。
+    """
+    子プロセス側で SCPI 実行を担当する worker 実体
 
     親側の ``Xdm1000Ctrl`` は queue、process、state、result を管理する。
     この worker は子プロセス内でだけ生成され、``Xdm1000Scpi`` を保持して

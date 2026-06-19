@@ -17,7 +17,7 @@ project_root/
 │           └── clients/
 └── examples/
     ├── serve_xdm1000.py
-    └── measure_xdm1000.py
+    └── meas_xdm1000.py
 ```
 
 `xdm1000_ctrl.py` はローカル制御クラスであり、ローカル利用では直接使う。
@@ -39,7 +39,7 @@ python examples/serve_xdm1000.py
 ## 測定サンプル
 
 ``` bash
-python examples/measure_xdm1000.py
+python examples/meas_xdm1000.py
 ```
 
 # SCPI ドライバ層 (`xdm1000_scpi.py`)
@@ -79,9 +79,9 @@ python examples/measure_xdm1000.py
     -   NULL
     -   dB / dBm
 -   Measure
-    -   `measure()`
-    -   `measure_main()`
-    -   `measure_sub()`
+    -   `meas()`
+    -   `meas_main()`
+    -   `meas_sub()`
 
 本クラスは SCPI ドライバであり、測定シーケンスの管理は行わない。
 
@@ -173,7 +173,7 @@ SCPI 層では個別メソッドとして提供する。
 ctrl 層では
 
 ```python
-set_measurement_mode(
+set_meas_mode(
     kind="voltage_dc",
     range_value="AUTO",
     rate="F",
@@ -234,7 +234,7 @@ ctrl 層では標準 API として採用しない。
 SCPI 層では
 
 ```python
-measure()
+meas()
 ```
 
 として公開する。
@@ -266,7 +266,7 @@ continuous
 SCPI 層では
 
 ```python
-measure_sub()
+meas_sub()
 ```
 
 として提供する。
@@ -364,8 +364,8 @@ ctrl 層が担当するもの
 
 ```text
                    ctrl API
-        measure_one_shot()
-start_continuous_measurement()
+        meas_one_shot()
+start_continuous_meas()
  start_statistics_mode()
            │
            ▼
@@ -452,9 +452,9 @@ Worker Process
 
 - idn
 - reset
-- set_measurement_mode
-- measure_one_shot
-- start_continuous_measurement
+- set_maes_mode
+- meas_one_shot
+- start_continuous_meas
 - start_statistics_mode
 - shutdown
 
@@ -497,7 +497,7 @@ state は共有状態である。
 running
 job_type
 job_id
-measurement_mode
+meas_mode
 range
 rate
 started_time
@@ -592,9 +592,9 @@ Worker Process を停止させない。
 
 ## running 中に禁止する API
 
-- measure_one_shot()
-- set_measurement_mode()
-- start_continuous_measurement()
+- meas_one_shot()
+- set_meas_mode()
+- start_continuous_meas()
 - start_statistics_mode()
 - reset()
 
@@ -1208,7 +1208,7 @@ NULL オフセットを取得する。
 
 ## Measure
 
-### measure_raw()
+### maes_raw()
 
 ```text
 MEAS?
@@ -1218,7 +1218,7 @@ MEAS?
 
 ---
 
-### measure()
+### meas()
 
 ```text
 MEAS?
@@ -1230,7 +1230,7 @@ MEAS?
 
 ---
 
-### measure_main()
+### meas_main()
 
 ```text
 MEAS1?
@@ -1241,7 +1241,7 @@ ctrl 層の 1shot / continuous ではこれを使用する。
 
 ---
 
-### measure_sub()
+### meas_sub()
 
 ```text
 MEAS2?
@@ -1284,7 +1284,7 @@ command queue を通さず、
     "running": True,
     "job_type": "continuous",
     "job_id": "xxxx",
-    "measurement_mode": "voltage_dc",
+    "meas_mode": "voltage_dc",
     "range": "AUTO",
     "rate": "F",
     "started_time": 1710000000.0,
@@ -1328,7 +1328,7 @@ continuous 測定の結果を返す。
 ```python
 {
     "job_type": "continuous",
-    "measurement_mode": "voltage_dc",
+    "meas_mode": "voltage_dc",
     "range": "AUTO",
     "rate": "F",
     "duration": 10.0,
@@ -1365,7 +1365,7 @@ statistics mode の結果を返す。
 
 ## 測定設定 API
 
-### set_measurement_mode()
+### set_meas_mode()
 
 測定モードを設定する。
 
@@ -1417,7 +1417,7 @@ DeviceBusyError
 
 ## 1shot 測定 API
 
-### measure_one_shot()
+### meas_one_shot()
 
 指定した測定条件で 1 回だけ測定する。
 
