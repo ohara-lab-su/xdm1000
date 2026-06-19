@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Dict, List, Union
 import multiprocessing as mp
 import traceback
 import time
@@ -8,7 +8,7 @@ import math
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 
 
-def _sample_clock(t0_perf: float) -> dict[str, float]:
+def _sample_clock(t0_perf: float) -> Dict[str, float]:
     """ホスト PC 側の時刻情報を作る。
 
     ``time.time()`` は UNIX 時刻であり、ログとの対応に使う。
@@ -25,7 +25,7 @@ def _sample_clock(t0_perf: float) -> dict[str, float]:
 def _configure_meas(
     scpi: Xdm1000Scpi,
     kind: str,
-    range_value: str | int | float = "AUTO",
+    range_value: Union[str, int, float] = "AUTO",
 ) -> None:
     """上位の測定種別名を SCPI の CONFigure 系コマンドへ写像する。"""
     if kind == "voltage_dc":
@@ -56,7 +56,7 @@ def _configure_meas(
         raise ValueError(f"未対応の測定種別である: {kind!r}")
 
 
-def _calc_stats(values: list[float]) -> dict[str, float | int | None]:
+def _calc_stats(values: List[float]) -> Dict[str, Union[float, int, None]]:
     """
     サーバー側で取得した測定値リストから基本統計を計算する。
     """
@@ -100,7 +100,9 @@ class _Xdm1000Worker:
         baudrate: int,
         logger_name: Optional[str] = None,
     ) -> None:
-        """worker に必要な共有オブジェクトと接続情報を保持する。"""
+        """
+        worker に必要な共有オブジェクトと接続情報を保持する。
+        """
         self.command_q = command_q
         self.response_q = response_q
         self.state = state
@@ -110,10 +112,15 @@ class _Xdm1000Worker:
         self.timeout = timeout
         self.baudrate = baudrate
         self.logger_name = logger_name
-        self.scpi: Xdm1000Scpi | None = None
+        self.scpi = None  # type: Optional[Xdm1000Scpi]
 
-    def set_idle(self, message: str = "idle") -> None:
-        """共有 state を idle に戻す。"""
+    def set_idle(
+        self,
+        message: str = "idle",
+    ) -> None:
+        """
+        共有 state を idle に戻す。
+        """
         self.state["running"] = False
         self.state["job_id"] = None
         self.state["job_type"] = None
@@ -123,8 +130,15 @@ class _Xdm1000Worker:
         self.state["traceback"] = None
         self.state["message"] = message
 
-    def set_running(self, job_id: str, job_type: str, args: dict[str, Any]) -> None:
-        """共有 state を running にする。"""
+    def set_running(
+        self,
+        job_id: str,
+        job_type: str,
+        args: Dict[str, Any],
+    ) -> None:
+        """
+        共有 state を running にする。
+        """
         self.state["running"] = True
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
@@ -142,14 +156,24 @@ class _Xdm1000Worker:
         self.state["last_value"] = None
         self.state["last_host_time"] = None
 
-    def finish(self, message: str = "finished") -> None:
-        """共有 state を終了状態にする。"""
+    def finish(
+        self,
+        message: str = "finished",
+    ) -> None:
+        """
+        共有 state を終了状態にする。
+        """
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["message"] = message
 
-    def fail(self, exc: BaseException) -> None:
-        """共有 state にワーカー例外を記録する。"""
+    def fail(
+        self,
+        exc: BaseException,
+    ) -> None:
+        """
+        共有 state にワーカー例外を記録する。
+        """
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["error"] = "".join(
@@ -194,11 +218,19 @@ class _Xdm1000Worker:
         finally:
             self.state["worker_alive"] = False
 
-    def put_ok(self, req_id: str, result: Any = None) -> None:
+    def put_ok(
+        self,
+        req_id: str,
+        result: Any = None,
+    ) -> None:
         """正常応答を response queue に返す。"""
         self.response_q.put({"req_id": req_id, "ok": True, "result": result})
 
-    def put_error(self, req_id: str, exc: BaseException) -> None:
+    def put_error(
+        self,
+        req_id: str,
+        exc: BaseException,
+    ) -> None:
         """例外応答を response queue に返す。"""
         self.response_q.put(
             {
@@ -209,17 +241,29 @@ class _Xdm1000Worker:
             }
         )
 
-    def handle_idn(self, req_id: str) -> None:
+    def handle_idn(
+        self,
+        req_id: str,
+    ) -> None:
         """*IDN? を実行する。"""
         self.put_ok(req_id, self.scpi.idn())
 
-    def handle_reset(self, req_id: str) -> None:
+    def handle_reset(
+        self,
+        req_id: str,
+    ) -> None:
         """*RST を実行する。"""
         self.scpi.reset()
         self.put_ok(req_id, None)
 
-    def handle_set_meas_mode(self, req_id: str, args: dict[str, Any]) -> None:
-        """測定条件を設定する。"""
+    def handle_set_meas_mode(
+        self,
+        req_id: str,
+        args: Dict[str, Any],
+    ) -> None:
+        """
+        測定条件を設定する。
+        """
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
         self.scpi.set_rate(args.get("rate", "F"))
         self.state["meas_kind"] = args["kind"]
@@ -227,7 +271,11 @@ class _Xdm1000Worker:
         self.state["rate"] = args.get("rate", "F")
         self.put_ok(req_id, dict(args))
 
-    def handle_one_shot(self, req_id: str, args: dict[str, Any]) -> None:
+    def handle_one_shot(
+        self,
+        req_id: str,
+        args: Dict[str, Any],
+    ) -> None:
         """1 shot 測定を実行する。"""
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
         self.scpi.set_rate(args.get("rate", "F"))
@@ -247,8 +295,14 @@ class _Xdm1000Worker:
         }
         self.put_ok(req_id, result)
 
-    def handle_start_continuous(self, req_id: str, args: dict[str, Any]) -> None:
-        """擬似 continuous 測定を実行する。"""
+    def handle_start_continuous(
+        self,
+        req_id: str,
+        args: Dict[str, Any],
+    ) -> None:
+        """
+        擬似 continuous 測定を実行する。
+        """
         job_id = args["job_id"]
         duration = float(args["duration"])
         interval = float(args.get("interval", 0.0))
@@ -260,14 +314,16 @@ class _Xdm1000Worker:
         self.set_running(job_id, "continuous", args)
         self.stop_event.clear()
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
+
         self.scpi.set_rate(args.get("rate", "F"))
         time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
 
-        samples: list[dict[str, Any]] = []
+        samples = []  # type: List[Dict[str, Any]]
         t0 = time.perf_counter()
         deadline = t0 + duration
         index = 0
+
         try:
             while time.perf_counter() < deadline and not self.stop_event.is_set():
                 s0 = _sample_clock(t0)
@@ -329,8 +385,14 @@ class _Xdm1000Worker:
             else:
                 self.finish("finished")
 
-    def handle_start_statistics(self, req_id: str, args: dict[str, Any]) -> None:
-        """statistics モードのテスト測定を実行する。"""
+    def handle_start_statistics(
+        self,
+        req_id: str,
+        args: Dict[str, Any],
+    ) -> None:
+        """
+        statistics モードのテスト測定を実行する。
+        """
         job_id = args["job_id"]
         duration = float(args["duration"])
         if duration <= 0:
@@ -389,7 +451,7 @@ class _Xdm1000Worker:
             }
             self.fail(exc)
 
-    def handle_command(self, command: dict[str, Any]) -> bool:
+    def handle_command(self, command: Dict[str, Any]) -> bool:
         """command queue から受け取った 1 コマンドを処理する。
 
         ``False`` を返した場合は worker loop を終了する。
