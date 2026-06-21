@@ -7,12 +7,14 @@ SCPI ドライバを直接公開しない。
 サーバー側で実体化される制御クラスは `Xdm1000Ctrl` である。
 
 ---
+
 # 必要なもの
 
 - [ese774_frame](https://github.com/ohara-lab-su/ese774_frame): スサノオプロジェクトで作成したフレーム
 - [x_logger](https://github.com/ohara-lab-su/x_logger): ローガーならば何でも構わないが、スサノオプロジェクトのロガーを推奨する
 
 ---
+
 # xdm1000 制御の基本構成
 
 ```text
@@ -23,6 +25,7 @@ xdm1000/server_fastapi/
 ```
 
 ---
+
 # xdm1000 Server の基本構成
 
 ```text
@@ -41,6 +44,7 @@ xdm1000/server_fastapi/
 ```
 
 ---
+
 # spec.py
 
 `spec.py` は FastAPI に公開する API を定義する。
@@ -66,6 +70,7 @@ ese774_frame 側では戻り値を `value` に包む処理が存在するため�
 そのため、`meas_one_shot()` などの dict 返却 API は `response_model=None` とする。
 
 ---
+
 # Router
 Router は ese774_frame の `DeviceRouter` を継承する。
 
@@ -81,6 +86,7 @@ Router 側に装置固有の実処理は書かない。
 実処理は `Xdm1000Ctrl` に置く。
 
 ---
+
 # Client
 
 Client は ese774_frame の client を利用する。
@@ -100,6 +106,7 @@ from xdm1000.server_fastapi.clients.async_xdm1000_client import AsyncXdm1000Clie
 import は絶対 import を用いる。
 
 ---
+
 # make.py
 
 `make.py` は `.pyi` を生成するためのスクリプトである。
@@ -203,6 +210,7 @@ if __name__ == "__main__":
 ```
 
 ---
+
 # API path
 
 ese774_frame により、API は次の形式で公開される。
@@ -218,6 +226,7 @@ POST /instance/xdm1000/meas_one_shot
 POST /instance/xdm1000/get_state
 POST /instance/xdm1000/start_continuous_meas
 ```
+
 
 ---
 
