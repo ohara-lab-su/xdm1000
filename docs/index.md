@@ -7,10 +7,10 @@ view on [github](https://github.com/ohara-lab-su/cobotta2/) / [ohara-lab-su (doc
 :caption: Contents:
 
 api/modules
-archtecture
-class
-driver
-tutorial
+man/archtecture
+man/class
+man/driver
+man/tutorial
 ```
 ---
 
