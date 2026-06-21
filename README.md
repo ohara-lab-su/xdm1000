@@ -203,7 +203,6 @@ if __name__ == "__main__":
 ```
 
 ---
-
 # API path
 
 ese774_frame により、API は次の形式で公開される。
