@@ -7,8 +7,23 @@ SCPI ドライバを直接公開しない。
 サーバー側で実体化される制御クラスは `Xdm1000Ctrl` である。
 
 ---
+# 必要なもの
 
-# 構成
+- [ese774_frame](https://github.com/ohara-lab-su/ese774_frame): スサノオプロジェクトで作成したフレーム
+- [x_logger](https://github.com/ohara-lab-su/x_logger): ローガーならば何でも構わないが、スサノオプロジェクトのロガーを推奨する
+
+---
+# xdm1000 制御の基本構成
+
+```text
+xdm1000/server_fastapi/
+├── xdm1000_ctrl.py
+├── xdm1000_scpi.py
+└── xdm1000_worker.py:
+```
+
+---
+# xdm1000 Server の基本構成
 
 ```text
 xdm1000/server_fastapi/
@@ -26,11 +41,9 @@ xdm1000/server_fastapi/
 ```
 
 ---
-
 # spec.py
 
 `spec.py` は FastAPI に公開する API を定義する。
-
 `Xdm1000Ctrl` の全メソッドを公開するのではなく、外部から使う意味がある API のみを公開する。
 
 公開対象は主に次である。
@@ -49,15 +62,11 @@ xdm1000/server_fastapi/
 # response_model
 
 測定結果のように dict をそのまま返す API では `response_model=None` を用いる。
-
 ese774_frame 側では戻り値を `value` に包む処理が存在するため、`DictResponse` を指定すると FastAPI の response validation で失敗する場合がある。
-
 そのため、`meas_one_shot()` などの dict 返却 API は `response_model=None` とする。
 
 ---
-
 # Router
-
 Router は ese774_frame の `DeviceRouter` を継承する。
 
 ```python
@@ -69,11 +78,9 @@ class Xdm1000Router(DeviceRouter):
 ```
 
 Router 側に装置固有の実処理は書かない。
-
 実処理は `Xdm1000Ctrl` に置く。
 
 ---
-
 # Client
 
 Client は ese774_frame の client を利用する。
@@ -93,11 +100,9 @@ from xdm1000.server_fastapi.clients.async_xdm1000_client import AsyncXdm1000Clie
 import は絶対 import を用いる。
 
 ---
-
 # make.py
 
 `make.py` は `.pyi` を生成するためのスクリプトである。
-
 生成対象は次の三つである。
 
 ```text
@@ -174,7 +179,6 @@ if __name__ == "__main__":
 ---
 
 # クライアント測定
-
 代表的なクライアント測定例は `examples/client_meas_volt.py` である。
 
 ```python
@@ -221,9 +225,10 @@ POST /instance/xdm1000/start_continuous_meas
 # 注意事項
 
 FastAPI サーバー側では `Xdm1000Ctrl` が実体化される。
-
 `Xdm1000Ctrl.__init__()` は `logger`, `log_level`, `config` を受け取れる必要がある。
-
 ese774_frame は device class 生成時にこれらを渡す。
-
 `config` が渡された場合、`PORT`, `TIMEOUT`, `BAUDRATE` を参照できるようにする。
+
+---
+## 作者
+- Kengo NAKADA
