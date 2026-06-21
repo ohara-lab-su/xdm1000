@@ -11,7 +11,7 @@ def main():
 
     dmm = SyncXdm1000Client(HOST, PORT)
 
-    print(dmm.measure_one_shot("voltage_dc"))
+    print(dmm.meas_one_shot("voltage_dc"))
 
 
 if __name__ == "__main__":

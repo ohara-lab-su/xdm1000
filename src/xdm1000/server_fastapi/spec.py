@@ -9,100 +9,147 @@ from xdm1000.server_fastapi.models.common import (
     BoolResponse,
     ClearRequest,
     ContinuousMeasRequest,
-    DictResponse,
     MeasModeRequest,
     MeasOneShotRequest,
     MeasRequest,
     MeasSimpleRequest,
-    OptionalDictResponse,
     StatisticsModeRequest,
     StringResponse,
     WaitUntilDoneRequest,
 )
 
-OBJECT_NAME = "xdm1000"
-
-
-def _api(name, request_model, response_model, *, summary="", description=""):
-    return ApiSpec(
-        name=name,
-        object_name=OBJECT_NAME,
-        request_model=request_model,
-        response_model=response_model,
-        method="post",
-        summary=summary,
-        description=description,
-    )
-
 
 xdm1000_api_spec = [
+    ######################################
     # 状態取得 API
-    _api("get_state", None, DictResponse, summary="Get current state"),
-    _api("is_running", None, BoolResponse, summary="Get running flag"),
-    _api("stop_job", None, DictResponse, summary="Request running job stop"),
-    _api(
-        "get_continuous_result",
-        ClearRequest,
-        OptionalDictResponse,
-        summary="Get continuous measurement result",
+    ApiSpec(
+        name="get_state",
+        object_name="xdm1000",
+        request_model=None,
+        response_model=None,
+        method="post",
+        description="get_state()",
+        summary="現在の状態を取得する",
     ),
-    _api(
-        "get_statistics_result",
-        ClearRequest,
-        OptionalDictResponse,
-        summary="Get statistics mode result",
+    ApiSpec(
+        name="is_running",
+        object_name="xdm1000",
+        request_model=None,
+        response_model=BoolResponse,
+        method="post",
+        description="is_running()",
+        summary="長時間測定中かどうかを取得する",
     ),
-
+    ApiSpec(
+        name="stop_job",
+        object_name="xdm1000",
+        request_model=None,
+        response_model=None,
+        method="post",
+        description="stop_job()",
+        summary="実行中の長時間測定に停止要求を出す",
+    ),
+    ApiSpec(
+        name="get_continuous_result",
+        object_name="xdm1000",
+        request_model=ClearRequest,
+        response_model=None,
+        method="post",
+        description="get_continuous_result(clear=False)",
+        summary="連続測定結果を取得する",
+    ),
+    ApiSpec(
+        name="get_statistics_result",
+        object_name="xdm1000",
+        request_model=ClearRequest,
+        response_model=None,
+        method="post",
+        description="get_statistics_result(clear=False)",
+        summary="statistics mode 結果を取得する",
+    ),
+    ######################################
     # 通常 API
-    _api("idn", None, StringResponse, summary="*IDN?"),
-    _api(
-        "set_meas_mode",
-        MeasModeRequest,
-        DictResponse,
-        summary="Set measurement mode",
+    ApiSpec(
+        name="idn",
+        object_name="xdm1000",
+        request_model=None,
+        response_model=StringResponse,
+        method="post",
+        description="idn()",
+        summary="*IDN? を取得する",
     ),
-    _api(
-        "meas_one_shot",
-        MeasOneShotRequest,
-        DictResponse,
-        summary="Execute one shot measurement",
+    ApiSpec(
+        name="set_meas_mode",
+        object_name="xdm1000",
+        request_model=MeasModeRequest,
+        response_model=None,
+        method="post",
+        description="set_meas_mode(kind, range_value='AUTO', rate='F')",
+        summary="測定種別・レンジ・速度を設定する",
     ),
-    _api(
-        "meas",
-        MeasRequest,
-        DictResponse,
-        summary="Execute one shot measurement shortcut",
+    ApiSpec(
+        name="meas_one_shot",
+        object_name="xdm1000",
+        request_model=MeasOneShotRequest,
+        response_model=None,
+        method="post",
+        description="meas_one_shot(kind, range_value='AUTO', rate='F', settle=0.0)",
+        summary="1 shot 測定を実行する",
     ),
-    _api(
-        "meas_voltage_dc",
-        MeasSimpleRequest,
-        DictResponse,
-        summary="Execute DC voltage one shot measurement",
+    ApiSpec(
+        name="meas",
+        object_name="xdm1000",
+        request_model=MeasRequest,
+        response_model=None,
+        method="post",
+        description="meas(kind='voltage_dc', range_value='AUTO', rate='F', settle=0.0)",
+        summary="1 shot 測定の短縮 API",
     ),
-    _api(
-        "meas_current_dc",
-        MeasSimpleRequest,
-        DictResponse,
-        summary="Execute DC current one shot measurement",
+    ApiSpec(
+        name="meas_voltage_dc",
+        object_name="xdm1000",
+        request_model=MeasSimpleRequest,
+        response_model=None,
+        method="post",
+        description="meas_voltage_dc(range_value='AUTO', rate='F')",
+        summary="DC 電圧を 1 shot 測定する",
     ),
-
+    ApiSpec(
+        name="meas_current_dc",
+        object_name="xdm1000",
+        request_model=MeasSimpleRequest,
+        response_model=None,
+        method="post",
+        description="meas_current_dc(range_value='AUTO', rate='F')",
+        summary="DC 電流を 1 shot 測定する",
+    ),
+    ######################################
     # 長時間測定 API
-    _api(
-        "start_continuous_meas",
-        ContinuousMeasRequest,
-        DictResponse,
-        summary="Start pseudo continuous measurement",
+    ApiSpec(
+        name="start_continuous_meas",
+        object_name="xdm1000",
+        request_model=ContinuousMeasRequest,
+        response_model=None,
+        method="post",
+        description="start_continuous_meas(kind, duration, range_value='AUTO', rate='F', interval=0.0, settle=0.0)",
+        summary="擬似 continuous 測定を開始する",
     ),
-    _api(
-        "start_statistics_mode",
-        StatisticsModeRequest,
-        DictResponse,
-        summary="Start statistics mode test",
+    ApiSpec(
+        name="start_statistics_mode",
+        object_name="xdm1000",
+        request_model=StatisticsModeRequest,
+        response_model=None,
+        method="post",
+        description="start_statistics_mode(kind, duration, range_value='AUTO', rate='F', settle=0.0)",
+        summary="statistics mode テスト測定を開始する",
     ),
-    _api(
-        "wait_until_done",
-        WaitUntilDoneRequest,
-        DictResponse,
-        summary="Wait until running job is done",
+    ApiSpec(
+        name="wait_until_done",
+        object_name="xdm1000",
+        request_model=WaitUntilDoneRequest,
+        response_model=None,
+        method="post",
+        description="wait_until_done(poll_interval=0.2)",
+        summary="running が終わるまで待つ",
     ),
 ]
