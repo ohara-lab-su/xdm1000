@@ -1,5 +1,3 @@
-x_logger
-ese774_frame
 setuptools
 python-dotenv
 fastapi
