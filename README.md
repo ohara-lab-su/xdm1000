@@ -227,7 +227,6 @@ POST /instance/xdm1000/get_state
 POST /instance/xdm1000/start_continuous_meas
 ```
 
-
 ---
 
 # 注意事項
