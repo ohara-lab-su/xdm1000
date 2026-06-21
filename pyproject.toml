@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdm1000"
 
-version = "0.0.0"
+version = "0.0.1"
 
 description = "cobotta ctrl server2 (using ORiN2)"
 authors = [
@@ -50,7 +50,7 @@ dependencies = [
 "myst-parser",
 "sphinx-autobuild",
 "sphinx-rtd-theme",
-"sphinxcontrib-napoleon",
+1G"sphinxcontrib-napoleon",
 "linkify-it-py",
 #
 #"grpcio",
