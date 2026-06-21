@@ -10,7 +10,7 @@ from ese774_frame.clients.sync_device_client import SyncDeviceClient
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
 
 
-class SyncXDM1000Client(SyncDeviceClient):
+class SyncXdm1000Client(SyncDeviceClient):
     """XDM1000 API spec を設定した SyncDeviceClient である。"""
 
     def __init__(

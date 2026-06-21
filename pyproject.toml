@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cobotta2"
+name = "xdm1000"
 
-version = "0.13.10"
+version = "0.0.0"
 
 description = "cobotta ctrl server2 (using ORiN2)"
 authors = [
@@ -36,7 +36,8 @@ dependencies = [
 "pytest",
 "pytest-asyncio",
 #
-"pytango",
+# "pytango",
+    "pyserial",
 #
 "pyyaml",
 "toml",
@@ -52,10 +53,10 @@ dependencies = [
 "sphinxcontrib-napoleon",
 "linkify-it-py",
 #
-"grpcio",
-"grpcio-tools",
-"google",
-"pygame",
+#"grpcio",
+#"grpcio-tools",
+#"google",
+#"pygame",
 ]
 
 [tool.pytest.ini_options]
