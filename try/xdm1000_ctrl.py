@@ -1,9 +1,9 @@
 # 保存先: xdm1241_scpi.py
 #!/usr/bin/env python3
 """
-OWON XDM1241 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
+OWON XDM1000 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
 
-このファイルは pyserial 経由で USB-Serial 接続された XDM1241 に SCPI を送る。
+このファイルは pyserial 経由で USB-Serial 接続された XDM1000 に SCPI を送る。
 XDM1041/XDM2041 用として公開されている XDM1000 Series Programming Manual に
 記載された SCPI コマンドを一通り薄く包む。
 
@@ -39,7 +39,7 @@ class AverageStats:
 
 
 class XDM1241:
-    """OWON XDM1241 に SCPI コマンドを送る低レベル制御クラスである。"""
+    """OWON XDM1000 に SCPI コマンドを送る低レベル制御クラスである。"""
 
     def __init__(
         self,
@@ -65,7 +65,7 @@ class XDM1241:
         """シリアルポートを閉じる。"""
         self.ser.close()
 
-    def __enter__(self) -> "XDM1241":
+    def __enter__(self) -> "XDM1000":
         """with 文用のエントリである。"""
         return self
 
@@ -86,7 +86,7 @@ class XDM1241:
         self.write(command)
         response = self.ser.readline().decode("ascii", errors="replace").strip()
         if response == "":
-            raise TimeoutError(f"no response from XDM1241: {command}")
+            raise TimeoutError(f"no response from XDM1000: {command}")
         return response
 
     def query_float(self, command: str) -> float:
@@ -303,13 +303,13 @@ class XDM1241:
         """測定速度を取得する。F が高速、M が中速、L が低速である。"""
         return self.query("RATE?")
 
-    def measure_raw(self) -> str:
+    def meas_raw(self) -> str:
         """MEAS? の応答を文字列のまま返す。副表示ありの場合はカンマ区切りで返る。"""
         return self.query("MEAS?")
 
-    def measure(self) -> Union[float, tuple[float, float]]:
+    def meas(self) -> Union[float, tuple[float, float]]:
         """MEAS? の応答を数値化して返す。副表示ありの場合は 2 要素 tuple を返す。"""
-        raw = self.measure_raw()
+        raw = self.meas_raw()
         values = [float(v.strip()) for v in raw.split(",")]
         if len(values) == 1:
             return values[0]
@@ -317,11 +317,11 @@ class XDM1241:
             return values[0], values[1]
         raise ValueError(f"unexpected MEAS? response: {raw}")
 
-    def measure_main(self) -> float:
+    def meas_main(self) -> float:
         """MEAS1? により主表示の測定値を取得する。"""
         return self.query_float("MEAS1?")
 
-    def measure_sub(self) -> float:
+    def meas_sub(self) -> float:
         """MEAS2? により副表示の測定値を取得する。"""
         return self.query_float("MEAS2?")
 
@@ -329,7 +329,8 @@ class XDM1241:
 def main() -> None:
     """DC 電圧を 10 回読む最小サンプルである。"""
     # port = "/dev/ttyUSB0"
-    port = "/dev/cu.usbserial-140"
+    # port = "/dev/cu.usbserial-140"
+    port = "/dev/cu.usbserial-10"
 
     with XDM1241(port) as dmm:
 
@@ -342,7 +343,7 @@ def main() -> None:
             time.sleep(0.5)
 
             for _ in range(10):
-                print(dmm.measure_main())
+                print(dmm.meas_main())
                 time.sleep(0.5)
 
         finally:
@@ -358,7 +359,7 @@ def main() -> None:
             time.sleep(0.5)
 
             for _ in range(10):
-                print(dmm.measure_main())
+                print(dmm.meas_main())
                 time.sleep(0.5)
 
         finally:

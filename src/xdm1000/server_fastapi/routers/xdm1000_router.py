@@ -7,10 +7,8 @@ from typing import Any, Optional
 
 from ese774_frame.routers.device_router import DeviceRouter
 
-from xdm1000.server_fastapi.models.common import AverageStatsResponse
 
-
-class XDM1000Router(DeviceRouter):
+class Xdm1000Router(DeviceRouter):
     """XDM1000 制御クラスを ese774_frame で透過公開する router である。"""
 
     def __init__(
@@ -25,14 +23,4 @@ class XDM1000Router(DeviceRouter):
             api_spec=api_spec,
             logger=logger,
             log_level=log_level,
-        )
-
-    def get_average_all(self) -> AverageStatsResponse:
-        """AverageStats dataclass を Pydantic response に正規化する。"""
-        stats = self._device.get_average_all()
-        return AverageStatsResponse(
-            minimum=stats.minimum,
-            maximum=stats.maximum,
-            average=stats.average,
-            count=stats.count,
         )

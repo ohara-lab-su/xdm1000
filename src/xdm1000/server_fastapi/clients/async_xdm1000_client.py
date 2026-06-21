@@ -10,7 +10,7 @@ from ese774_frame.clients.async_device_client import AsyncDeviceClient
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
 
 
-class AsyncXDM1000Client(AsyncDeviceClient):
+class AsyncXdm1000Client(AsyncDeviceClient):
     """XDM1000 API spec を設定した AsyncDeviceClient である。"""
 
     def __init__(
