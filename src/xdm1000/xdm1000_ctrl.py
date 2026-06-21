@@ -125,6 +125,9 @@ class Xdm1000Ctrl:
         port: str,
         timeout: float = 2.0,
         baudrate: int = 115200,
+        logger: Optional[Any] = None,
+        log_level: Optional[str] = None,
+        config: Any = None,
     ) -> None:
         """
         XDM1000 上位制御クラスを生成し、測定ワーカーを起動
@@ -132,6 +135,9 @@ class Xdm1000Ctrl:
         self.port = port
         self.timeout = timeout
         self.baudrate = baudrate
+        self.logger = logger
+        self.log_level = log_level
+        self.config = config
 
         self._manager = mp.Manager()
         self._state = self._manager.dict()
