@@ -132,12 +132,18 @@ class Xdm1000Ctrl:
         """
         XDM1000 上位制御クラスを生成し、測定ワーカーを起動
         """
-        self.port = port
-        self.timeout = timeout
-        self.baudrate = baudrate
         self.logger = logger
         self.log_level = log_level
         self.config = config
+
+        if config is not None:
+            port = getattr(config, "PORT", port)
+            timeout = getattr(config, "TIMEOUT", timeout)
+            baudrate = getattr(config, "BAUDRATE", baudrate)
+
+        self.port = port
+        self.timeout = timeout
+        self.baudrate = baudrate
 
         self._manager = mp.Manager()
         self._state = self._manager.dict()
