@@ -3,114 +3,17 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
 
 ScpiValue = Union[str, int, float]
 
 
-class RawCommandRequest(BaseModel):
-    """応答を要求しない SCPI コマンドを表す。"""
+class EmptyResponse(BaseModel):
+    """空 response である。"""
 
-    command: str
-
-
-class ScpiQueryRequest(BaseModel):
-    """応答を要求する SCPI クエリを表す。"""
-
-    command: str
-
-
-class BoolRequest(BaseModel):
-    """bool 値 1 個を受け取る。"""
-
-    enabled: bool
-
-
-class DisplayRequest(BaseModel):
-    """XDM1000 の display 番号を受け取る。"""
-
-    display: int = 1
-
-
-class FunctionRequest(BaseModel):
-    """測定 function と display 番号を受け取る。"""
-
-    function: str
-    display: int = 1
-
-
-class RtdTypeRequest(BaseModel):
-    """RTD type を受け取る。"""
-
-    rtd_type: str
-
-
-class TemperatureUnitRequest(BaseModel):
-    """温度単位を受け取る。"""
-
-    unit: str
-
-
-class TemperatureShowRequest(BaseModel):
-    """温度表示 mode を受け取る。"""
-
-    mode: str
-
-
-class OptionalRtdTypeRequest(BaseModel):
-    """省略可能な RTD type を受け取る。"""
-
-    rtd_type: Optional[str] = None
-
-
-class OptionalSelectorRequest(BaseModel):
-    """省略可能な selector を受け取る。"""
-
-    selector: Optional[str] = None
-
-
-class RangeRequest(BaseModel):
-    """レンジ値を受け取る。"""
-
-    range_value: ScpiValue = "AUTO"
-
-
-class ContinuityThresholdRequest(BaseModel):
-    """導通しきい値を受け取る。"""
-
-    value: ScpiValue
-
-
-class ResistanceOhmRequest(BaseModel):
-    """抵抗値 [ohm] を受け取る。"""
-
-    resistance_ohm: ScpiValue
-
-
-class CalcFunctionRequest(BaseModel):
-    """CALCulate:FUNCtion の function を受け取る。"""
-
-    function: str
-
-
-class NullOffsetRequest(BaseModel):
-    """NULL offset 値を受け取る。"""
-
-    value: ScpiValue
-
-
-class RangeIndexRequest(BaseModel):
-    """RANGE の index または DEF を受け取る。"""
-
-    range_index: Union[int, str]
-
-
-class RateRequest(BaseModel):
-    """RATE の speed を受け取る。"""
-
-    speed: str
+    pass
 
 
 class StringResponse(BaseModel):
@@ -119,34 +22,85 @@ class StringResponse(BaseModel):
     value: str
 
 
-class FloatResponse(BaseModel):
-    """float response である。"""
-
-    value: float
-
-
-class IntResponse(BaseModel):
-    """int response である。"""
-
-    value: int
-
-
 class BoolResponse(BaseModel):
     """bool response である。"""
 
     value: bool
 
 
-class MeasureResponse(BaseModel):
-    """MEAS? response である。"""
+class DictResponse(BaseModel):
+    """dict response である。"""
 
-    value: Union[float, Tuple[float, float]]
+    value: Dict[str, Any]
 
 
-class AverageStatsResponse(BaseModel):
-    """CALCulate:AVERage:ALL? response である。"""
+class OptionalDictResponse(BaseModel):
+    """Optional[dict] response である。"""
 
-    minimum: float
-    maximum: float
-    average: float
-    count: int
+    value: Optional[Dict[str, Any]] = None
+
+
+class MeasModeRequest(BaseModel):
+    """測定種別・レンジ・速度を受け取る。"""
+
+    kind: str
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+
+
+class MeasOneShotRequest(BaseModel):
+    """1 shot 測定条件を受け取る。"""
+
+    kind: str
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+    settle: float = 0.0
+
+
+class MeasRequest(BaseModel):
+    """短縮 1 shot 測定条件を受け取る。"""
+
+    kind: str = "voltage_dc"
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+    settle: float = 0.0
+
+
+class MeasSimpleRequest(BaseModel):
+    """電圧・電流 1 shot 測定条件を受け取る。"""
+
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+
+
+class ContinuousMeasRequest(BaseModel):
+    """擬似 continuous 測定条件を受け取る。"""
+
+    kind: str
+    duration: float
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+    interval: float = 0.0
+    settle: float = 0.0
+
+
+class StatisticsModeRequest(BaseModel):
+    """statistics mode 測定条件を受け取る。"""
+
+    kind: str
+    duration: float
+    range_value: ScpiValue = "AUTO"
+    rate: str = "F"
+    settle: float = 0.0
+
+
+class ClearRequest(BaseModel):
+    """取得後に保存結果を clear するかどうかを受け取る。"""
+
+    clear: bool = False
+
+
+class WaitUntilDoneRequest(BaseModel):
+    """running 終了待ちの poll interval を受け取る。"""
+
+    poll_interval: float = 0.2
