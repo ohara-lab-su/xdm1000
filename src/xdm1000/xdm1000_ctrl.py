@@ -492,7 +492,8 @@ def _example_main() -> None:
     # 接続設定
     # ----------------------------------------------------------------------
 
-    PORT = "/dev/cu.usbserial-140"
+    # PORT = "/dev/cu.usbserial-140"
+    PORT = "/dev/cu.usbserial-10"
     BAUDRATE = 115200
     TIMEOUT = 2.0
 
