@@ -28,8 +28,8 @@ dependencies = [
 "requests",
 "aiohttp",
 "httpx",
-"pywin32; sys_platform == 'win32'",
-"pygame; sys_platform == 'win32'",
+# "pywin32; sys_platform == 'win32'",
+# "pygame; sys_platform == 'win32'",
 "coloredlogs",
 "colorlog",
 #
@@ -50,7 +50,7 @@ dependencies = [
 "myst-parser",
 "sphinx-autobuild",
 "sphinx-rtd-theme",
-1G"sphinxcontrib-napoleon",
+"sphinxcontrib-napoleon",
 "linkify-it-py",
 #
 #"grpcio",
