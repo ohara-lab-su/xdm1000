@@ -1,0 +1,28 @@
+x_logger
+ese774_frame
+setuptools
+python-dotenv
+fastapi
+fastapi-utils
+uvicorn
+pydantic
+starlette
+requests
+aiohttp
+httpx
+coloredlogs
+colorlog
+pytest
+pytest-asyncio
+pyserial
+pyyaml
+toml
+tomli; python_version < "3.11"
+importlib-metadata>=4.0; python_version < "3.8"
+nest_asyncio
+sphinx
+myst-parser
+sphinx-autobuild
+sphinx-rtd-theme
+sphinxcontrib-napoleon
+linkify-it-py
