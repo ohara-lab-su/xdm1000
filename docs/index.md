@@ -7,201 +7,374 @@ view on [github](https://github.com/ohara-lab-su/cobotta2/) / [ohara-lab-su (doc
 :caption: Contents:
 
 api/modules
-tutorials/index
-function/index
-camera/index
-joypad/index
-tips/index
-history/index
+archtecture
+class
+driver
+tutorial
 ```
 ---
 
-## コボッタ制御クラス構成(v0.10.3)
+OWON XDM1000 シリーズデジタルマルチメータ用 Python 制御ライブラリである。
 
-基本的に cobotta 制御は下記の４つのクラスから作られる。
+本ライブラリは XDM1000 を Python からローカル制御できることを第一目的として設計している。また、その制御クラスをそのまま FastAPI サーバーへ組み込み、ese774_frame を介したリモート制御を実現することも目的としている。
 
-### 基本制御クラス
+SCPI を直接利用する低レベルドライバと、測定器として利用するための上位制御クラスを明確に分離している。
 
-基本となるクラスは4つある。
-このクラスを用いて、二つの I/F クラスが作られる
+---
 
-- cobotta_bcap.py: b-CAP を使った cobotta 制御クラス(low-level)
-- cobotta_orin2.py: ORiN2 を使った cobotta 制御クラス
-- cobotta_ctrl.py: cobotta 制御の I/F クラス
-- cobotta_ctrl_joypad.py: cobotta_bcap を使った Joypad 制御+cobotta制御
+# 特徴
 
-#### b-CAP を用いる制御
+- XDM1000 Series Programming Manual に対応した SCPI ドライバ
+- SCPI を隠蔽した上位制御クラス
+- ローカル制御・リモート制御の両対応
+- multiprocessing を利用した長時間測定
+- 擬似 continuous 測定
+- statistics モード
+- FastAPI サーバー対応
+- ese774_frame 自動 API 生成対応
 
-b-CAP による直接制御によりコボッタを制御する class とその　I/F class
+---
+
+# ディレクトリ構成
+
 ```text
-制御class: cobotta_bcap.py
+project_root/
+├── src/
+│   └── xdm1000/
+│       ├── xdm1000_scpi.py
+│       ├── xdm1000_ctrl.py
+│       ├── xdm1000_worker.py
+│       └── server_fastapi/
+│           ├── spec.py
+│           ├── make.py
+│           ├── models/
+│           ├── routers/
+│           └── clients/
+│
+├── examples/
+│   ├── serve_start.py
+│   └── client_meas_volt.py
+│
+├── README.md
+├── TUTORIAL.md
+├── API_REFERENCE.md
+└── CHANGELOG.md
+```
+
+---
+
+# 設計方針
+
+本ライブラリはレイヤ分離を最優先として設計している。
+
+```
+Application
+      │
+      ▼
+Xdm1000Ctrl
+      │
+      ▼
+Xdm1000Scpi
+      │
+      ▼
+USB Serial
+      │
+      ▼
+XDM1000
+```
+
+SCPI の知識は xdm1000_scpi.py のみに集約する。
+
+利用者は通常 xdm1000_ctrl.py のみを利用する。
+
+FastAPI から利用する場合も、サーバー側で実体化されるのは Xdm1000Ctrl であり、SCPI ドライバを直接公開しない。
+
+SCPI ドライバは装置仕様との対応を保つことを目的とする。
+
+一方、上位制御クラスは「測定器として利用する API」を提供することを目的とする。
+
+そのため、SCPI コマンド体系と上位 API は一致しない。
+
+```
+Xdm1000Ctrl
+        │
+        ├── one shot
+        ├── continuous
+        ├── statistics
+        ├── state
+        └── worker process
+
+            │
+
+Xdm1000Scpi
+        │
+        ├── CONFigure
+        ├── SENSe
+        ├── MEAS
+        ├── CALCulate
+        └── IEEE488.2
+```
+
+この構造により、
+
+- SCPI の変更
+- API の変更
+- FastAPI の変更
+
+を互いに独立して行うことができる。
+
+---
+
+# SCPI ドライバ (`xdm1000_scpi.py`)
+
+## 設計目的
+
+`xdm1000_scpi.py` は XDM1000 Programming Manual に記載されている SCPI コマンドを、そのまま Python メソッドとして提供する低レベルドライバである。
+
+このクラスの目的は、
+
+- SCPI コマンドを隠蔽しないこと
+- マニュアルとの対応を明確にすること
+- 上位制御から SCPI の詳細を分離すること
+
+である。
+
+SCPI ドライバ自身は測定シーケンスを持たない。
+
+例えば、
+
+- one shot
+- continuous
+- statistics
+
+などの概念は持たない。
+
+SCPI を送信し、その結果を返すだけである。
+
+---
+
+## SCPI 採用方針
+
+本ライブラリでは Programming Manual に存在する SCPI は、利用頻度に関係なく原則として実装する。
+
+上位制御で利用しない SCPI も削除しない。
+
+これは
+
+- デバッグ
+- 装置検証
+- 将来の拡張
+
+を容易にするためである。
+
+---
+
+## SCPI サブシステム
+
+実装は Programming Manual の章構成に合わせている。
+
+### IEEE488.2
+
+装置識別やリセットなどの共通コマンドを提供する。
+
+例
+
+- *IDN?
+- *RST
+
+---
+
+### SYSTem
+
+装置設定を行う。
+
+例
+
+- Remote
+- Local
+- Beeper
+
+Remote / Local の切替は SCPI ドライバのみが保持する責務であり、上位制御クラスでは公開しない。
+
+---
+
+### CONFigure
+
+測定機能そのものを切り替える。
+
+例
+
+- DC Voltage
+- AC Voltage
+- DC Current
+- Resistance
+- Frequency
+- Continuity
+
+通常は一度設定すると、その測定モードで動作し続ける。
+
+---
+
+### SENSe
+
+測定条件を設定する。
+
+例
+
+- Range
+- Rate
+- Temperature
+- dB
+- Null
+
+測定機能(CONFigure)とは独立して設定される。
+
+---
+
+### MEASure
+
+測定値を取得する。
+
+Programming Manual には複数の取得方法が存在する。
+
+#### MEAS?
+
+主表示・副表示をまとめて取得する。
+
+副表示が存在する場合は
+
+```
+main,sub
+```
+
+が返る。
+
+#### MEAS1?
+
+主表示のみ取得する。
+
+本ライブラリでは通常の測定値取得はこれを採用している。
+
+#### MEAS2?
+
+副表示のみ取得する。
+
+通常の測定では使用しないが、SCPI ドライバでは提供する。
+
+---
+
+### CALCulate
+
+演算機能である。
+
+本ライブラリでは
+
+- NULL
+- dB
+- dBm
+- Statistics
+
+を提供する。
+
+Statistics は装置内部の統計機能であり、ホスト側で一定時間平均を取る continuous 測定とは目的が異なる。
+
+---
+
+# 上位制御クラス (`xdm1000_ctrl.py`)
+
+## 設計目的
+
+上位制御クラスは XDM1000 を「測定器」として扱うための API を提供する。
+
+利用者は SCPI を意識する必要はない。
+
+例えば
+
+```python
+dmm.meas_one_shot("voltage_dc")
+```
+
+だけで
+
+- CONFigure
+- RATE
+- MEAS1?
+
+など必要な SCPI を内部で実行する。
+
+---
+
+## SCPI の隠蔽
+
+上位制御クラスでは
+
+- remote()
+- local()
+
+を公開しない。
+
+これらは SCPI ドライバ内部のみが扱う。
+
+利用者は
+
+- 測定
+- 設定
+
+のみを意識すればよい。
+
+---
+
+## 測定モード
+
+上位制御では次の三種類を提供する。
+
+### One Shot
+
+1回だけ測定する。
+
+内部では
+
+```
+CONFigure
 ↓
-I/Fclass: cobotta_ctrl_joypad.py
-```
-
-#### ORiN2 を用いる制御
-
-ORiN2 による直接制御によりコボッタを制御する class とその　I/F class
-```text
-制御class: cobotta_orin2.py
+RATE
 ↓
-I/Fclass: cobotta_ctrl.py
+MEAS1?
 ```
 
-cobotta_orin2 と cobotta_b-cab は基本的な使い方においてはほぼ置換可能なレベル
-で作られている。ただし、ORiN2 は windows の COM で作られているために、
-オブジェクトのインスタンスを別スレッドで動かすことができない。
+を実行する。
 
-そたのめに、gRPC のようなフレームワークに乗せる場合は、フレームワーク内で、
-一つのスレッドに COM オブジェクトを張り付かせて、一種のサーバーループにより
-エンドポイントとしてのハンドラを動かす必要がある。
+---
 
-かなりめんどくさい。
+### Continuous
 
-##### ORiN2 を使う上での注意事項
+指定時間だけ最速または指定間隔で測定する。
+SCPI に continuous 測定は存在しない。
+そのため
 
-ORiN2 は Windows の
-COM (Component Object Model) で与えられるために注意が必要となる。
-COM はライブラリの共有などで、
-動的であれ静的であれ、
-いわゆるリンク（コンパイル時の静的な型結合）を前提としない形である。
-
-COM は実体としては DLL をロードし、
-ABI（バイナリレベルインターフェース）に基づいて、
-オブジェクト上の関数を呼び出す仕組みである。
-
-オブジェクトは Windows 上のメモリ空間に存在し、
-プロセス内呼び出し、
-あるいはプロセス間呼び出しとしてアクセスされる。
-(**COM の呼び出しをネットワーク越しに拡張した仕組みは DCOM という。**)
-
-問題は、ORiN2 を使うときの注意として、必ず ORiN2 の手続きに従って
-オブジェクトを閉じてからプログラムを終了しないと、COM の参照が残り、
-結果としてオブジェクトが解放されずメモリ上に残る点である。
-
-**たとえば、Take Arm したままになる問題がある**
-
-これは非常に厄介で、Windows 上で Win32（C++ など）
-で明示的に管理している場合に比べ、
-Python などから COM を使う場合に特に発生しやすい。
-
-これは、COM の参照カウント（AddRef / Release）による寿命管理と、
-Python のガーベジコレクションおよび win32com の動的バインディング
-との間にズレがあるためである。
-
-すなわち、COM 設計と Python バインディングの組み合わせで生じやすい問題であり、
-デンソーウェーブが Python 向けに安全なラッパーなどを提供いないため、
-実運用上は安定定期に動作せず。問題として顕在化しやすい。
-
-このため、Python から ORiN2 を使用する場合は、
-オブジェクトの解放を意識した実装を行わないと、
-さまざまな問題が発生する可能性がある。
-
-デンソーウェーブにおいて、python が公式には非対応である理由だ。
-つまり不完全なのです。
-
-つまり、COM は python 利用ではかなりの注意が必要で、
-問題が起こりやすく。原理的に python として不可能な使い方が多数存在する。
-この制御クラスでは、無理やり、python にしているために、
-潜在的には不安定なままである。
-
-### pad:　joypad を使うためのクラスライブラリ
-
-```text
-├── pad
-│  ├── input_grpc_client.py
-│  ├── input_grpc_server.py
-│  ├── input_joypad_local.py
-│  ├── joypad_core.py
-│  ├── joypad_mover.py
-│  └── joypad_runtime.py
+```
+MEAS1?
+↓
+MEAS1?
+↓
+MEAS1?
 ```
 
-### server_fastapi: [ese774](https://ohara-lab-su.github.io/ese774_frame/) を使った通信Frame
+をホスト側で繰り返し実行する。
+各測定値には
 
-server_fastapi 以下は ese774 を使った通信構築するためのもの。
-制御class ごとに作り直す必要がある。
+- host start time
+- host end time
 
-#### サーバーのI/F定義
+を保存する。
 
-```text
-├── server_fastapi
-│   ├── clients/
-│   ├── models/
-│   ├── routers/
-│   ├── spec_ctrl.py
-│   └── spec_state.py
-```
+---
 
-- clients/: クライアントクラス集
-- models/: I/F 定義クラス (pydantic のモデル)集
-- routers/: サーバー定義
-- spec_ctrl.py: I/F定義ファイル spec 
- 
-#### サーバー起動スクリプト
+### Statistics
 
-```text
-│    ├── joypad_grpc_server.py
-│    └── orin2_grpc_server.py
-```
-
-#### クライアント
-
-```text
-│   ├── clients
-│   │   ├── async_cobotta_client.py
-│   │   ├── async_cobotta_state_client.py
-│   │   ├── sync_cobotta_client.py
-```
-
-### server_grpc: [grpc_frame](https://ohara-lab-su.github.io/grpc_frame/) を使った通信Frame
-
-server_grpc 以下は gRPC を使った通信構築するためのもの。
-
-```text
-├── server_grpc
-│    ├── bcap_grpc_async_client.py
-│    ├── joypad_grpc_client.py
-│    ├── orin2_grpc_client.py
-```
-
-#### クライアント
-
-```text
-├── server_grpc
-│    ├── bcap_grpc_async_client.py
-│    ├── joypad_grpc_client.py
-│    ├── orin2_grpc_client.py
-```
-
-#### pyi 作成スクリプト
-一般的な動的なディスパッチにしていると、
-元のmethodなどの定義をクライアント側に呼べないことがおおい。
-エディタで補完ができなくなるために、
-スタブ(pyi) を事前に構築していく。
-そのためのスクリプト
-
-```text
-│    ├── make_bcap_pyi.py
-│    ├── make_joypad_pyi.py
-│    ├── make_orin2_pyi.py
-```
-
-ese774 フレームを用いたサーバー起動と、
-ese774 クライアントフレームを継承した、
-クライアントクラスの生成。
-
-## 制御サンプル/test
-
-制御クラスの実装時のテストに用いている制御サンプル/test。
-ほぼ全ての機能をテストでき、使い方を生部ことができる
-
-[github](https://github.com/ohara-lab-su/cobotta2/tree/main/tests)
-
-- direct: ミニマムな制御テスト
-- fastapi: ese774 を用いたテスト
-- grpc: grpc を用いたテスト
-- local: 通信を使わず cobottaCtrl を用いたテスト
+装置内部 Statistics 機能を利用する。
+これは XDM1000 が内部で保持する統計値を取得するモードであり、continuous 測定とは別機能である。
+現状では動作確認用機能として提供する。
 
 
 ---
