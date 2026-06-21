@@ -236,7 +236,6 @@ FastAPI サーバー側では `Xdm1000Ctrl` が実体化される。
 ese774_frame は device class 生成時にこれらを渡す。
 `config` が渡された場合、`PORT`, `TIMEOUT`, `BAUDRATE` を参照できるようにする。
 
-
 ---
 ## 作者
 - Kengo NAKADA
