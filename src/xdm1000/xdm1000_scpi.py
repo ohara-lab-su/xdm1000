@@ -538,7 +538,8 @@ class Xdm1000Scpi:
 
 def main() -> None:
     """DC 電圧を 10 回読む最小サンプルである。"""
-    port = "/dev/cu.usbserial-140"
+    # port = "/dev/cu.usbserial-140"
+    port = "/dev/cu.usbserial-10"
 
     dmm = Xdm1000Scpi(port)
 

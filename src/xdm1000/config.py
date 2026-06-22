@@ -1,5 +1,6 @@
-"""
+# xdm1000/config.py
 
+"""
 Kengo NAKADA:
 https://github.com/shimane-dev, https://github.com/kengo-nakada
 kengo.nakada@mat.shimane-u.ac.jp, kengo.nakada@gmail.com
@@ -13,21 +14,18 @@ import inspect
 
 
 class Config:
-    # --- cobotta-server
-    SERVER_IP = "10.170.10.33"  # server1
-    SERVER_PORT = 8002
-    CLIENT_LOGGER_NAME = "cobotta_client"
-    SERVER_LOGGER_NAME = "cobotta_server"
-    # --- joypad-serer
-    JOYPAD_PORT = 50051
-    JOYPAD_LOGGER_NAME = "cobotta_joypad"
-    JOYPAD_INTERVAL = 0.01
-    # --- cobotta
-    COBOTTA_IP = "10.170.10.35"  # cobotta1
-    # --- cobotta, BCAP-port
-    BCAP_PORT = 5007
+    # --- xdm1000-server
+    SERVER_HOST = "127.0.0.1"  # server
+    SERVER_PORT = 8000
+    CLIENT_LOGGER_NAME = "xdm1000_client"
+    SERVER_LOGGER_NAME = "xdm1000_server"
+
+    # --- xdm1000 device
+    PORT = "/dev/cu.usbserial-10"  # XDM1000 serial port
+    BAUDRATE = 115200
+    TIMEOUT = 2.0
+
     # --- server param
-    TIMEOUT = 5
     LOGGER_LEVEL = "debug"
 
     def __init__(self, yaml_path=None):
@@ -42,12 +40,11 @@ class Config:
     ):
         """クラスとして使う"""
         # if yaml_path is None:
-        #     yaml_path = os.environ.get("COBOTTA_CONFIG_YAML")
+        #     yaml_path = os.environ.get("XDM1000_CONFIG_YAML")
         #     if yaml_path is None:
         #         return
 
         # 新しいパス解決ロジックを使用
-        # resolved_path = yaml_path
         resolved_path = cls._resolve_path(yaml_path=yaml_path, depth=2)
         with open(resolved_path, "r") as f:
             data = yaml.safe_load(f)
@@ -68,13 +65,12 @@ class Config:
         # インスタンス用：インスタンスdictにのみ上書き
         print("load_yaml:", yaml_path)
         if yaml_path is None:
-            yaml_path = os.environ.get("COBOTTA_CONFIG_YAML")
+            yaml_path = os.environ.get("XDM1000_CONFIG_YAML")
             if yaml_path is None:
                 return
 
         # 新しいパス解決ロジックを使用 (引数で受け取った depth を渡す)
         resolved_path = self._resolve_path(yaml_path=yaml_path, depth=depth)
-        # resolved_path = os.path.abspath(yaml_path)
 
         print("resolved_path:", resolved_path)
         with open(resolved_path, "r") as f:
@@ -96,18 +92,8 @@ class Config:
         # 1. 絶対パス判定（/ や C:\ など）
         if path.is_absolute():
             return path
-            # return path  # / や C:\ から始まれば、そのままのパスを返す
 
         # 2. 実行ファイルの場所を特定
-        # クラスで呼び出す時
-        #   stack[0]: _resolve_path
-        #   stack[1]: load_yaml または _load_yaml
-        #   stack[2]: Config.load(...) を書いたファイル
-        # インスタンス変数(コンストラクタ)から呼び出す時
-        #   stack[0] = _resolve_path
-        #   stack[1] = load_yaml または _load_yaml
-        #   stack[2] = __init__
-        #   stack[3] = config = Config(...) を書いたファイル
         caller_frame = inspect.stack()[depth]
         caller_file = Path(caller_frame.filename).resolve()
 
