@@ -275,6 +275,9 @@ class _Xdm1000Worker:
     ) -> None:
         """*RST を実行する。"""
         self.scpi.reset()
+        self._current_meas_kind = None
+        self._current_range_value = None
+        self._current_rate = None
         self.put_ok(req_id, None)
 
     def handle_set_meas_mode(
