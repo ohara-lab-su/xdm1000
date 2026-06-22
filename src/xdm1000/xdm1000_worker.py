@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from typing import Any, Literal, Optional, Dict, List, Union
+from typing import Any, Literal, Optional
 import multiprocessing as mp
 import logging
 import traceback
@@ -9,7 +9,7 @@ import math
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 
 
-def _sample_clock(t0_perf: float) -> Dict[str, float]:
+def _sample_clock(t0_perf: float) -> dict[str, float]:
     """ホスト PC 側の時刻情報を作る。
 
     ``time.time()`` は UNIX 時刻であり、ログとの対応に使う。
@@ -26,7 +26,7 @@ def _sample_clock(t0_perf: float) -> Dict[str, float]:
 def _configure_meas(
     scpi: Xdm1000Scpi,
     kind: str,
-    range_value: Union[str, int, float] = "AUTO",
+    range_value: str | int | float = "AUTO",
 ) -> None:
     """上位の測定種別名を SCPI の CONFigure 系コマンドへ写像する。"""
     if kind == "voltage_dc":
@@ -57,7 +57,7 @@ def _configure_meas(
         raise ValueError(f"未対応の測定種別である: {kind!r}")
 
 
-def _calc_stats(values: List[float]) -> Dict[str, Union[float, int, None]]:
+def _calc_stats(values: list[float]) -> dict[str, float | int | None]:
     """
     サーバー側で取得した測定値リストから基本統計を計算する。
     """
@@ -82,8 +82,7 @@ def _calc_stats(values: List[float]) -> Dict[str, Union[float, int, None]]:
 
 
 class _Xdm1000Worker:
-    """
-    子プロセス側で SCPI 実行を担当する worker 実体
+    """子プロセス側で SCPI 実行を担当する worker 実体である。
 
     親側の ``Xdm1000Ctrl`` は queue、process、state、result を管理する。
     この worker は子プロセス内でだけ生成され、``Xdm1000Scpi`` を保持して
@@ -105,18 +104,8 @@ class _Xdm1000Worker:
         log_level: Optional[str] = None,
         config: Any = None,
     ) -> None:
-        """
-        worker に必要な共有オブジェクトと接続情報を保持する。
-        """
-        if config is not None:
-            port = getattr(config, "PORT", port)
-            timeout = getattr(config, "TIMEOUT", timeout)
-            baudrate = getattr(config, "BAUDRATE", baudrate)
-            if logger_name is None:
-                logger_name = getattr(config, "SERVER_LOGGER_NAME", None)
-            if log_level is None:
-                log_level = getattr(config, "LOGGER_LEVEL", None)
-
+        """worker に必要な共有オブジェクトと接続情報を保持する。"""
+        # XLogger が存在しない時に仕方がないのでデフォルトの logging を使う
         if logger is None:
             log_level = log_level or "INFO"
             logging.basicConfig(level=log_level.upper())
@@ -124,6 +113,7 @@ class _Xdm1000Worker:
                 logger = logging.getLogger(__name__)
             else:
                 logger = logging.getLogger(logger_name)
+            # logger = get_silent_logger())
 
         self.command_q = command_q
         self.response_q = response_q
@@ -137,15 +127,13 @@ class _Xdm1000Worker:
         self.logger_name = logger_name
         self.log_level = log_level
         self.config = config
-        self.scpi = None  # type: Optional[Xdm1000Scpi]
+        self.scpi: Xdm1000Scpi | None = None
 
     def set_idle(
         self,
         message: str = "idle",
     ) -> None:
-        """
-        共有 state を idle に戻す。
-        """
+        """共有 state を idle に戻す。"""
         self.state["running"] = False
         self.state["job_id"] = None
         self.state["job_type"] = None
@@ -159,11 +147,9 @@ class _Xdm1000Worker:
         self,
         job_id: str,
         job_type: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> None:
-        """
-        共有 state を running にする。
-        """
+        """共有 state を running にする。"""
         self.state["running"] = True
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
@@ -185,9 +171,7 @@ class _Xdm1000Worker:
         self,
         message: str = "finished",
     ) -> None:
-        """
-        共有 state を終了状態にする。
-        """
+        """共有 state を終了状態にする。"""
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["message"] = message
@@ -196,9 +180,7 @@ class _Xdm1000Worker:
         self,
         exc: BaseException,
     ) -> None:
-        """
-        共有 state にワーカー例外を記録する。
-        """
+        """共有 state にワーカー例外を記録する。"""
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["error"] = "".join(
@@ -215,6 +197,8 @@ class _Xdm1000Worker:
                 timeout=self.timeout,
                 baudrate=self.baudrate,
                 logger=self.logger,
+                log_level=self.log_level,
+                config=self.config,
             )
             # 上位制御クラスでは remote/local を公開しない。
             # 通信モード制御はワーカー起動・終了時の内部処理として扱う。
@@ -285,11 +269,9 @@ class _Xdm1000Worker:
     def handle_set_meas_mode(
         self,
         req_id: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> None:
-        """
-        測定条件を設定する。
-        """
+        """測定条件を設定する。"""
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
         self.scpi.set_rate(args.get("rate", "F"))
         self.state["meas_kind"] = args["kind"]
@@ -300,7 +282,7 @@ class _Xdm1000Worker:
     def handle_one_shot(
         self,
         req_id: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> None:
         """1 shot 測定を実行する。"""
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
@@ -324,11 +306,9 @@ class _Xdm1000Worker:
     def handle_start_continuous(
         self,
         req_id: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> None:
-        """
-        擬似 continuous 測定を実行する。
-        """
+        """擬似 continuous 測定を実行する。"""
         job_id = args["job_id"]
         duration = float(args["duration"])
         interval = float(args.get("interval", 0.0))
@@ -340,16 +320,14 @@ class _Xdm1000Worker:
         self.set_running(job_id, "continuous", args)
         self.stop_event.clear()
         _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
-
         self.scpi.set_rate(args.get("rate", "F"))
         time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
 
-        samples = []  # type: List[Dict[str, Any]]
+        samples: list[dict[str, Any]] = []
         t0 = time.perf_counter()
         deadline = t0 + duration
         index = 0
-
         try:
             while time.perf_counter() < deadline and not self.stop_event.is_set():
                 s0 = _sample_clock(t0)
@@ -414,11 +392,9 @@ class _Xdm1000Worker:
     def handle_start_statistics(
         self,
         req_id: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> None:
-        """
-        statistics モードのテスト測定を実行する。
-        """
+        """statistics モードのテスト測定を実行する。"""
         job_id = args["job_id"]
         duration = float(args["duration"])
         if duration <= 0:
@@ -477,7 +453,10 @@ class _Xdm1000Worker:
             }
             self.fail(exc)
 
-    def handle_command(self, command: Dict[str, Any]) -> bool:
+    def handle_command(
+        self,
+        command: dict[str, Any],
+    ) -> bool:
         """command queue から受け取った 1 コマンドを処理する。
 
         ``False`` を返した場合は worker loop を終了する。
