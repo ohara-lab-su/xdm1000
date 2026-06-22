@@ -80,6 +80,23 @@ def _calc_stats(values: List[float]) -> Dict[str, Union[float, int, None]]:
     }
 
 
+def _same_meas_config(
+    current_kind: Optional[str],
+    current_range_value: Union[str, int, float, None],
+    current_rate: Optional[str],
+    kind: str,
+    range_value: Union[str, int, float] = "AUTO",
+    rate: str = "F",
+) -> bool:
+    if current_kind != kind:
+        return False
+    if current_range_value != range_value:
+        return False
+    if current_rate != rate:
+        return False
+    return True
+
+
 class _Xdm1000Worker:
     """
     子プロセス側で SCPI 実行を担当する worker 実体
@@ -114,6 +131,9 @@ class _Xdm1000Worker:
         self.baudrate = baudrate
         self.logger_name = logger_name
         self.scpi = None  # type: Optional[Xdm1000Scpi]
+        self._current_meas_kind = None
+        self._current_range_value = None
+        self._current_rate = None
 
     def set_idle(
         self,
@@ -265,11 +285,30 @@ class _Xdm1000Worker:
         """
         測定条件を設定する。
         """
-        _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
-        self.scpi.set_rate(args.get("rate", "F"))
-        self.state["meas_kind"] = args["kind"]
-        self.state["range_value"] = args.get("range_value", "AUTO")
-        self.state["rate"] = args.get("rate", "F")
+        kind = args["kind"]
+        range_value = args.get("range_value", "AUTO")
+        rate = args.get("rate", "F")
+
+        if not _same_meas_config(
+            self._current_meas_kind,
+            self._current_range_value,
+            self._current_rate,
+            kind,
+            range_value,
+            rate,
+        ):
+            if self._current_meas_kind != kind or self._current_range_value != range_value:
+                _configure_meas(self.scpi, kind, range_value)
+                self._current_meas_kind = kind
+                self._current_range_value = range_value
+
+            if self._current_rate != rate:
+                self.scpi.set_rate(rate)
+                self._current_rate = rate
+
+        self.state["meas_kind"] = kind
+        self.state["range_value"] = range_value
+        self.state["rate"] = rate
         self.put_ok(req_id, dict(args))
 
     def handle_one_shot(
@@ -278,17 +317,36 @@ class _Xdm1000Worker:
         args: Dict[str, Any],
     ) -> None:
         """1 shot 測定を実行する。"""
-        _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
-        self.scpi.set_rate(args.get("rate", "F"))
+        kind = args["kind"]
+        range_value = args.get("range_value", "AUTO")
+        rate = args.get("rate", "F")
+
+        if not _same_meas_config(
+            self._current_meas_kind,
+            self._current_range_value,
+            self._current_rate,
+            kind,
+            range_value,
+            rate,
+        ):
+            if self._current_meas_kind != kind or self._current_range_value != range_value:
+                _configure_meas(self.scpi, kind, range_value)
+                self._current_meas_kind = kind
+                self._current_range_value = range_value
+
+            if self._current_rate != rate:
+                self.scpi.set_rate(rate)
+                self._current_rate = rate
+
         time.sleep(float(args.get("settle", 0.0)))
         t0 = time.perf_counter()
         before = _sample_clock(t0)
         value = self.scpi.meas_main()
         after = _sample_clock(t0)
         result = {
-            "kind": args["kind"],
-            "range_value": args.get("range_value", "AUTO"),
-            "rate": args.get("rate", "F"),
+            "kind": kind,
+            "range_value": range_value,
+            "rate": rate,
             "value": value,
             "host_time_start": before["host_time"],
             "host_time_end": after["host_time"],
@@ -314,9 +372,27 @@ class _Xdm1000Worker:
 
         self.set_running(job_id, "continuous", args)
         self.stop_event.clear()
-        _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
 
-        self.scpi.set_rate(args.get("rate", "F"))
+        kind = args["kind"]
+        range_value = args.get("range_value", "AUTO")
+        rate = args.get("rate", "F")
+
+        if not _same_meas_config(
+            self._current_meas_kind,
+            self._current_range_value,
+            self._current_rate,
+            kind,
+            range_value,
+            rate,
+        ):
+            if self._current_meas_kind != kind or self._current_range_value != range_value:
+                _configure_meas(self.scpi, kind, range_value)
+                self._current_meas_kind = kind
+                self._current_range_value = range_value
+
+            if self._current_rate != rate:
+                self.scpi.set_rate(rate)
+                self._current_rate = rate
         time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
 
@@ -401,8 +477,27 @@ class _Xdm1000Worker:
 
         self.set_running(job_id, "statistics", args)
         self.stop_event.clear()
-        _configure_meas(self.scpi, args["kind"], args.get("range_value", "AUTO"))
-        self.scpi.set_rate(args.get("rate", "F"))
+
+        kind = args["kind"]
+        range_value = args.get("range_value", "AUTO")
+        rate = args.get("rate", "F")
+
+        if not _same_meas_config(
+            self._current_meas_kind,
+            self._current_range_value,
+            self._current_rate,
+            kind,
+            range_value,
+            rate,
+        ):
+            if self._current_meas_kind != kind or self._current_range_value != range_value:
+                _configure_meas(self.scpi, kind, range_value)
+                self._current_meas_kind = kind
+                self._current_range_value = range_value
+
+            if self._current_rate != rate:
+                self.scpi.set_rate(rate)
+                self._current_rate = rate
         time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
 
