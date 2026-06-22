@@ -8,9 +8,7 @@ PORT = 8000
 
 
 def main():
-
     dmm = SyncXdm1000Client(HOST, PORT)
-
     print(dmm.meas_one_shot("voltage_dc"))
 
 
