@@ -27,6 +27,7 @@ def _worker_loop(
     log_level=None,
     config=None,
 ):
+    """worker process の起動関数である。"""
     worker = _Xdm1000Worker(
         command_q=command_q,
         response_q=response_q,
@@ -44,14 +45,17 @@ def _worker_loop(
 
 
 class DeviceBusyError(RuntimeError):
+    """DeviceBusyError を表すクラスである。"""
     pass
 
 
 class DeviceWorkerError(RuntimeError):
+    """DeviceWorkerError を表すクラスである。"""
     pass
 
 
 class Xdm1000Ctrl(object):
+    """Xdm1000Ctrl を表すクラスである。"""
     DEFAULT_CONFIG = MeasurementConfig(
         kind="voltage_dc",
         range_value="AUTO",
@@ -123,9 +127,11 @@ class Xdm1000Ctrl(object):
         self._process.start()
 
     def _is_running(self):
+        """実行中かどうかを返す。"""
         return bool(self._state.get("running", False))
 
     def _require_not_running(self):
+        """実行中なら例外を送出する。"""
         if self._is_running():
             raise DeviceBusyError(
                 "測定器は running 中である: job_type={0}, job_id={1}".format(
@@ -135,6 +141,7 @@ class Xdm1000Ctrl(object):
             )
 
     def _resolved_config(self, kind=None, range_value=None, rate=None):
+        """None 引数を既存設定または既定値で補完する。"""
         base = self._current_config
         if base is None:
             base = self.DEFAULT_CONFIG
@@ -149,6 +156,7 @@ class Xdm1000Ctrl(object):
         return MeasurementConfig(kind=kind, range_value=range_value, rate=rate)
 
     def _rpc(self, name, args=None, timeout=None):
+        """worker へ 1 件の要求を送る。"""
         req_id = uuid.uuid4().hex
 
         with self._rpc_lock:
@@ -191,6 +199,7 @@ class Xdm1000Ctrl(object):
                 )
 
     def close(self):
+        """保持している資源を解放する。"""
         if self._process.is_alive():
             try:
                 self._rpc("shutdown", timeout=2.0)
@@ -203,41 +212,50 @@ class Xdm1000Ctrl(object):
         self._manager.shutdown()
 
     def disconnect(self):
+        """close の別名である。"""
         self.close()
 
     def get_state(self):
+        """現在状態を返す。"""
         state = dict(self._state)
         state["process_alive"] = self._process.is_alive()
         return state
 
     def is_running(self):
+        """実行中かどうかを返す。"""
         return self._is_running()
 
     def stop_job(self):
+        """実行中ジョブへ停止要求を出す。"""
         self._stop_event.set()
         return self.get_state()
 
     def get_continuous_result(self, clear=False):
+        """get_continuous_result を実行する。"""
         result = self._result_store.get("continuous")
         if clear and "continuous" in self._result_store:
             del self._result_store["continuous"]
         return result
 
     def get_statistics_result(self, clear=False):
+        """get_statistics_result を実行する。"""
         result = self._result_store.get("statistics")
         if clear and "statistics" in self._result_store:
             del self._result_store["statistics"]
         return result
 
     def idn(self):
+        """機器識別情報を返す。"""
         self._require_not_running()
         return self._rpc("idn", timeout=5.0)
 
     def _reset_scpi_internal(self):
+        """_reset_scpi_internal を実行する。"""
         self._require_not_running()
         self._rpc("reset", timeout=10.0)
 
     def set_meas_mode(self, kind=None, range_value=None, rate=None):
+        """set_meas_mode を実行する。"""
         self._require_not_running()
         return self._rpc(
             "set_meas_mode",
@@ -246,6 +264,7 @@ class Xdm1000Ctrl(object):
         )
 
     def meas_one_shot(self, kind=None, range_value=None, rate=None, settle=0.0):
+        """1 shot 測定を実行する。"""
         self._require_not_running()
         return self._rpc(
             "one_shot",
@@ -254,6 +273,7 @@ class Xdm1000Ctrl(object):
         )
 
     def meas(self, kind=None, range_value=None, rate=None, settle=0.0):
+        """測定を実行する。"""
         return self.meas_one_shot(
             kind=kind,
             range_value=range_value,
@@ -262,9 +282,11 @@ class Xdm1000Ctrl(object):
         )
 
     def meas_voltage_dc(self, range_value=None, rate=None, settle=0.0):
+        """meas_voltage_dc を実行する。"""
         return self.meas_one_shot("voltage_dc", range_value, rate, settle)
 
     def meas_current_dc(self, range_value=None, rate=None, settle=0.0):
+        """meas_current_dc を実行する。"""
         return self.meas_one_shot("current_dc", range_value, rate, settle)
 
     def start_continuous_meas(
@@ -276,6 +298,7 @@ class Xdm1000Ctrl(object):
         interval=0.0,
         settle=0.0,
     ):
+        """start_continuous_meas を実行する。"""
         self._require_not_running()
         job_id = uuid.uuid4().hex
         return self._rpc(
@@ -300,6 +323,7 @@ class Xdm1000Ctrl(object):
         rate=None,
         settle=0.0,
     ):
+        """start_statistics_mode を実行する。"""
         self._require_not_running()
         job_id = uuid.uuid4().hex
         return self._rpc(
@@ -316,6 +340,7 @@ class Xdm1000Ctrl(object):
         )
 
     def wait_until_done(self, poll_interval=0.2):
+        """running が終わるまで待つ。"""
         while True:
             state = self.get_state()
             print("STATE:", state)
@@ -325,6 +350,7 @@ class Xdm1000Ctrl(object):
 
 
 def _example_main():
+    """動作確認用のサンプル処理である。"""
     config = None
     try:
         config = Config("xdm1000_example.yml")
