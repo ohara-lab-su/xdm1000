@@ -13,17 +13,43 @@ XDM1041 / XDM2041 用として公開されている XDM1000 Series Programming M
 * 低レベル SCPI の送受信だけを担当する。
 * config がないときはコンストラクタ引数を使う。
 * config とコンストラクタ引数が両方あるときは config を優先する。
-* logger 実体が無いときだけ logging を使う。
+* logger 実体が無いときだけ x_logger / logging を使う。
 * pyserial.Serial() の引数は型を明示して、型エラーが出にくいようにする。
 * Python 3.6 で動く書き方を使う。
 """
 
-import logging
 import time
 import serial
-from typing import Optional, Union
 
-ScpiValue = Union[str, int, float]
+try:
+    from x_logger import get_logger
+except Exception:
+    get_logger = None
+
+
+def _resolve_logger(
+    logger=None,
+    logger_name=None,
+    log_level=None,
+):
+    """logger を解決する。"""
+    if logger is not None:
+        return logger
+
+    if get_logger is not None:
+        resolved_name = logger_name or "xdm1000_scpi"
+        try:
+            return get_logger(resolved_name, level=log_level)
+        except TypeError:
+            return get_logger(resolved_name)
+        except Exception:
+            pass
+
+    import logging
+
+    resolved_level = log_level or "INFO"
+    logging.basicConfig(level=resolved_level.upper())
+    return logging.getLogger(logger_name or __name__)
 
 
 class AverageStats(object):
@@ -56,23 +82,21 @@ class Xdm1000Scpi(object):
         config=None,
     ):
         """USB-Serial ポートを開く。"""
-        # XLogger が存在しない時に仕方がないのでデフォルトの logging を使う
-        if logger is None:
-            log_level = log_level or "INFO"
-            logging.basicConfig(level=log_level.upper())
-            if logger_name is None:
-                logger = logging.getLogger(__name__)
-            else:
-                logger = logging.getLogger(logger_name)
-            # logger = get_silent_logger())
-
-        self._logger = logger
-        self._config = config
-
         if config is not None:
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
+            if logger_name is None:
+                logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
+            if log_level is None:
+                log_level = getattr(config, "LOGGER_LEVEL", log_level)
+
+        self._logger = _resolve_logger(
+            logger=logger,
+            logger_name=logger_name,
+            log_level=log_level,
+        )
+        self._config = config
 
         if port is None:
             raise ValueError("port が必要である。")
@@ -81,28 +105,17 @@ class Xdm1000Scpi(object):
         self._timeout = float(timeout)
         self._baudrate = int(baudrate)
 
-        serial_port = self._port
-        serial_baudrate = int(self._baudrate)
-        serial_bytesize = int(serial.EIGHTBITS)
-        serial_parity = str(serial.PARITY_NONE)
-        serial_stopbits = int(serial.STOPBITS_ONE)
-        serial_timeout = float(self._timeout)
-        serial_write_timeout = float(self._timeout)
-        serial_xonxoff = False
-        serial_rtscts = False
-        serial_dsrdtr = False
-
         self.ser = serial.Serial(
-            port=serial_port,
-            baudrate=serial_baudrate,
-            bytesize=serial_bytesize,
-            parity=serial_parity,
-            stopbits=serial_stopbits,
-            timeout=serial_timeout,
-            write_timeout=serial_write_timeout,
-            xonxoff=serial_xonxoff,
-            rtscts=serial_rtscts,
-            dsrdtr=serial_dsrdtr,
+            port=self._port,
+            baudrate=int(self._baudrate),
+            bytesize=int(serial.EIGHTBITS),
+            parity=str(serial.PARITY_NONE),
+            stopbits=int(serial.STOPBITS_ONE),
+            timeout=float(self._timeout),
+            write_timeout=float(self._timeout),
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
         )
 
     def close(
@@ -315,7 +328,7 @@ class Xdm1000Scpi(object):
     def get_rate(
         self,
     ):
-        """測定速度を取得する。"""
+        """測定速度を取得する。F が高速、M が中速、L が低速である。"""
         return self.query("RATE?")
 
     def meas_raw(
@@ -349,22 +362,18 @@ class Xdm1000Scpi(object):
         return self.query_float("MEAS2?")
 
 
-def main(
-    config_path="xdm1000_example.yml",
-):
-    """
-    DC 電圧を 10 回読む最小サンプルである。
-    """
-    from xdm1000.config import Config
-
-    config = None
+def main():
+    """DC 電圧を 10 回読む最小サンプルである。"""
     try:
-        config = Config(config_path)
+        from xdm1000.config import Config
+        config = Config()
     except Exception:
         config = None
 
+    port = "/dev/cu.usbserial-10"
+
     dmm = Xdm1000Scpi(
-        port="/dev/cu.usbserial-10",
+        port=port,
         timeout=2.0,
         baudrate=115200,
         config=config,

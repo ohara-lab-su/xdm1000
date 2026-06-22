@@ -10,24 +10,87 @@ SCPI コマンドと長時間測定を実行する。
 設計方針
 --------
 
-* logger 実体が無いときだけ logging を使う。
+* logger 実体が無いときだけ x_logger / logging を使う。
 * logger 名は ``logger_name`` を通して受け取れる。
 * config があれば config を優先する。
 * kind / range_value / rate が現在設定と異なるときだけ設定し直す。
-* ``set_meas_mode()`` 済みなら、その設定を引き継いで ``meas()`` できる。
+* ctrl が現在設定の正本を持ち、worker は装置反映済みキャッシュだけを持つ。
+* 同じ worker の寿命中は装置反映済みキャッシュを保持し続ける。
 * Python 3.6 で動く書き方を使う。
 """
 
-import logging
-import multiprocessing as mp
 import traceback
 import time
 import math
-from typing import Any, Dict, List, Optional, Union
+
+try:
+    from x_logger import get_logger
+except Exception:
+    get_logger = None
 
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 
-MeasureValue = Union[str, int, float]
+
+class MeasurementConfig(object):
+    """現在の測定条件を保持する。"""
+
+    def __init__(
+        self,
+        kind,
+        range_value="AUTO",
+        rate="F",
+    ):
+        self.kind = kind
+        self.range_value = range_value
+        self.rate = rate
+
+    def equals(
+        self,
+        other,
+    ):
+        if other is None:
+            return False
+        if self.kind != other.kind:
+            return False
+        if self.range_value != other.range_value:
+            return False
+        if self.rate != other.rate:
+            return False
+        return True
+
+    def to_dict(
+        self,
+    ):
+        return {
+            "kind": self.kind,
+            "range_value": self.range_value,
+            "rate": self.rate,
+        }
+
+
+def _resolve_logger(
+    logger=None,
+    logger_name=None,
+    log_level=None,
+):
+    """logger を解決する。"""
+    if logger is not None:
+        return logger
+
+    if get_logger is not None:
+        resolved_name = logger_name or "xdm1000_worker"
+        try:
+            return get_logger(resolved_name, level=log_level)
+        except TypeError:
+            return get_logger(resolved_name)
+        except Exception:
+            pass
+
+    import logging
+
+    resolved_level = log_level or "INFO"
+    logging.basicConfig(level=resolved_level.upper())
+    return logging.getLogger(logger_name or __name__)
 
 
 def _sample_clock(
@@ -79,9 +142,7 @@ def _configure_meas(
 def _calc_stats(
     values,
 ):
-    """
-    サーバー側で取得した測定値リストから基本統計を計算する。
-    """
+    """サーバー側で取得した測定値リストから基本統計を計算する。"""
     if not values:
         return {
             "count": 0,
@@ -104,9 +165,7 @@ def _calc_stats(
 
 
 class _Xdm1000Worker(object):
-    """
-    子プロセス側で SCPI 実行を担当する worker 実体である。
-    """
+    """子プロセス側で SCPI 実行を担当する worker 実体である。"""
 
     def __init__(
         self,
@@ -123,28 +182,20 @@ class _Xdm1000Worker(object):
         log_level=None,
         config=None,
     ):
-        """
-        worker に必要な共有オブジェクトと接続情報を保持する。
-        """
-        # XLogger が存在しない時に仕方がないのでデフォルトの logging を使う
-        if logger is None:
-            log_level = log_level or "INFO"
-            logging.basicConfig(level=log_level.upper())
-            if logger_name is None:
-                logger = logging.getLogger(__name__)
-            else:
-                logger = logging.getLogger(logger_name)
-            # logger = get_silent_logger())
-
-        self.logger = logger
+        """worker に必要な共有オブジェクトと接続情報を保持する。"""
         self.logger_name = logger_name
         self.log_level = log_level
+        self.logger = _resolve_logger(
+            logger=logger,
+            logger_name=self.logger_name,
+            log_level=self.log_level,
+        )
         self.config = config
 
-        if config is not None:
-            port = getattr(config, "PORT", port)
-            timeout = getattr(config, "TIMEOUT", timeout)
-            baudrate = getattr(config, "BAUDRATE", baudrate)
+        if self.config is not None:
+            port = getattr(self.config, "PORT", port)
+            timeout = getattr(self.config, "TIMEOUT", timeout)
+            baudrate = getattr(self.config, "BAUDRATE", baudrate)
 
         self.command_q = command_q
         self.response_q = response_q
@@ -156,17 +207,12 @@ class _Xdm1000Worker(object):
         self.baudrate = baudrate
         self.scpi = None
 
-        self._current_kind = None
-        self._current_range_value = None
-        self._current_rate = None
+        self._device_config = None
 
     def set_idle(
         self,
         message="idle",
     ):
-        """
-        共有 state を idle に戻す。
-        """
         self.state["running"] = False
         self.state["job_id"] = None
         self.state["job_type"] = None
@@ -185,9 +231,6 @@ class _Xdm1000Worker(object):
         job_type,
         args,
     ):
-        """
-        共有 state を running にする。
-        """
         self.state["running"] = True
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
@@ -202,9 +245,6 @@ class _Xdm1000Worker(object):
         self,
         message="finished",
     ):
-        """
-        正常終了状態を state へ反映する。
-        """
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["message"] = message
@@ -213,9 +253,6 @@ class _Xdm1000Worker(object):
         self,
         exc,
     ):
-        """
-        失敗状態を state へ反映する。
-        """
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["error"] = repr(exc)
@@ -242,7 +279,6 @@ class _Xdm1000Worker(object):
             self.state["baudrate"] = self.baudrate
             self.set_idle("worker_ready")
             return True
-
         except BaseException as exc:
             self.state["worker_alive"] = False
             self.state["error"] = repr(exc)
@@ -271,7 +307,6 @@ class _Xdm1000Worker(object):
         req_id,
         result=None,
     ):
-        """正常応答を response queue に返す。"""
         self.response_q.put({"req_id": req_id, "ok": True, "result": result})
 
     def put_error(
@@ -279,7 +314,6 @@ class _Xdm1000Worker(object):
         req_id,
         exc,
     ):
-        """例外応答を response queue に返す。"""
         self.response_q.put(
             {
                 "req_id": req_id,
@@ -289,83 +323,49 @@ class _Xdm1000Worker(object):
             }
         )
 
-    def _get_effective_meas_config(
-        self,
-        kind=None,
-        range_value=None,
-        rate=None,
-    ):
-        """
-        None の項目を現在設定または既定値で補完する。
-        """
-        if self._current_kind is None:
-            current_kind = "voltage_dc"
-        else:
-            current_kind = self._current_kind
-
-        if self._current_range_value is None:
-            current_range_value = "AUTO"
-        else:
-            current_range_value = self._current_range_value
-
-        if self._current_rate is None:
-            current_rate = "F"
-        else:
-            current_rate = self._current_rate
-
-        if kind is None:
-            kind = current_kind
-        if range_value is None:
-            range_value = current_range_value
-        if rate is None:
-            rate = current_rate
-
-        return kind, range_value, rate
-
     def _apply_meas_config_if_needed(
         self,
-        kind,
-        range_value="AUTO",
-        rate="F",
+        config,
     ):
         """必要なときだけ測定条件を装置へ反映する。"""
-        need_configure = False
-        need_rate = False
+        if config.equals(self._device_config):
+            return
 
-        if self._current_kind != kind:
+        if self._device_config is None:
             need_configure = True
-        if self._current_range_value != range_value:
-            need_configure = True
-        if self._current_rate != rate:
             need_rate = True
+        else:
+            need_configure = (
+                self._device_config.kind != config.kind
+                or self._device_config.range_value != config.range_value
+            )
+            need_rate = self._device_config.rate != config.rate
 
         if need_configure:
-            _configure_meas(self.scpi, kind, range_value)
+            _configure_meas(
+                self.scpi,
+                config.kind,
+                config.range_value,
+            )
 
         if need_rate:
-            self.scpi.set_rate(rate)
+            self.scpi.set_rate(config.rate)
 
         if need_configure or need_rate:
-            self._current_kind = kind
-            self._current_range_value = range_value
-            self._current_rate = rate
+            self._device_config = config
 
     def handle_idn(
         self,
         req_id,
     ):
-        """IDN 要求を処理する。"""
         self.put_ok(req_id, self.scpi.idn())
 
     def handle_reset(
         self,
         req_id,
     ):
-        """*RST を実行する。"""
         self.scpi.reset()
-        self._current_kind = None
-        self._current_range_value = None
-        self._current_rate = None
+        self._device_config = None
         self.put_ok(req_id, None)
 
     def handle_set_meas_mode(
@@ -373,131 +373,121 @@ class _Xdm1000Worker(object):
         req_id,
         args,
     ):
-        """
-        測定条件を設定する。
-        """
-        kind, range_value, rate = self._get_effective_meas_config(
-            kind=args.get("kind"),
-            range_value=args.get("range_value"),
-            rate=args.get("rate"),
+        config = MeasurementConfig(
+            kind=args["kind"],
+            range_value=args.get("range_value", "AUTO"),
+            rate=args.get("rate", "F"),
         )
-        self._apply_meas_config_if_needed(kind, range_value, rate)
-        self.state["meas_kind"] = kind
-        self.state["range_value"] = range_value
-        self.state["rate"] = rate
-        self.put_ok(
-            req_id,
-            {
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
-            },
-        )
+        self._apply_meas_config_if_needed(config)
+        self.state["meas_kind"] = config.kind
+        self.state["range_value"] = config.range_value
+        self.state["rate"] = config.rate
+        self.put_ok(req_id, config.to_dict())
 
     def handle_one_shot(
         self,
         req_id,
         args,
     ):
-        """1 shot 測定を実行する。"""
-        kind, range_value, rate = self._get_effective_meas_config(
-            kind=args.get("kind"),
-            range_value=args.get("range_value"),
-            rate=args.get("rate"),
+        config = MeasurementConfig(
+            kind=args["kind"],
+            range_value=args.get("range_value", "AUTO"),
+            rate=args.get("rate", "F"),
         )
-        self._apply_meas_config_if_needed(kind, range_value, rate)
-        time.sleep(float(args.get("settle", 0.0)))
+        self._apply_meas_config_if_needed(config)
+
+        settle = float(args.get("settle", 0.0))
+        if settle > 0.0:
+            time.sleep(settle)
+
         t0 = time.perf_counter()
         before = _sample_clock(t0)
         value = self.scpi.meas_main()
         after = _sample_clock(t0)
-        result = {
-            "kind": kind,
-            "range_value": range_value,
-            "rate": rate,
-            "value": value,
-            "host_time_start": before["host_time"],
-            "host_time_end": after["host_time"],
-            "read_elapsed": after["host_perf"] - before["host_perf"],
-        }
-        self.put_ok(req_id, result)
+
+        self.put_ok(
+            req_id,
+            {
+                "kind": config.kind,
+                "range_value": config.range_value,
+                "rate": config.rate,
+                "value": value,
+                "host_time_start": before["host_time"],
+                "host_time_end": after["host_time"],
+                "read_elapsed": after["host_perf"] - before["host_perf"],
+            },
+        )
 
     def handle_start_continuous(
         self,
         req_id,
         args,
     ):
-        """
-        擬似 continuous 測定を実行する。
-        """
         job_id = args["job_id"]
         duration = float(args["duration"])
         interval = float(args.get("interval", 0.0))
-        if duration <= 0:
+        settle = float(args.get("settle", 0.0))
+
+        if duration <= 0.0:
             raise ValueError("duration は正の値でなければならない。")
-        if interval < 0:
+        if interval < 0.0:
             raise ValueError("interval は 0 以上でなければならない。")
+
+        config = MeasurementConfig(
+            kind=args["kind"],
+            range_value=args.get("range_value", "AUTO"),
+            rate=args.get("rate", "F"),
+        )
+        self._apply_meas_config_if_needed(config)
 
         self.set_running(job_id, "continuous", args)
         self.stop_event.clear()
-
-        kind, range_value, rate = self._get_effective_meas_config(
-            kind=args.get("kind"),
-            range_value=args.get("range_value"),
-            rate=args.get("rate"),
-        )
-        self._apply_meas_config_if_needed(kind, range_value, rate)
-
-        time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
 
+        if settle > 0.0:
+            time.sleep(settle)
+
+        started_at = time.time()
+        deadline = started_at + duration
         samples = []
-        t0 = time.perf_counter()
-        deadline = t0 + duration
-        index = 0
 
         try:
             while True:
-                now = time.perf_counter()
+                now = time.time()
                 if now >= deadline:
                     break
                 if self.stop_event.is_set():
                     break
 
+                t0 = time.perf_counter()
                 before = _sample_clock(t0)
                 value = self.scpi.meas_main()
                 after = _sample_clock(t0)
+
                 samples.append(
                     {
-                        "index": index,
-                        "value": value,
                         "host_time_start": before["host_time"],
                         "host_time_end": after["host_time"],
                         "read_elapsed": after["host_perf"] - before["host_perf"],
-                        "t_rel_start": before["t_rel"],
-                        "t_rel_end": after["t_rel"],
+                        "value": value,
                     }
                 )
-                index += 1
 
-                if interval > 0:
-                    next_target = before["host_perf"] + interval
-                    while True:
-                        remain = next_target - time.perf_counter()
-                        if remain <= 0:
-                            break
-                        time.sleep(min(remain, 0.001))
+                if interval > 0.0:
+                    remain = before["host_time"] + interval - time.time()
+                    if remain > 0.0:
+                        time.sleep(remain)
 
             result = {
                 "job_id": job_id,
                 "ok": True,
                 "stopped": self.stop_event.is_set(),
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
+                "kind": config.kind,
+                "range_value": config.range_value,
+                "rate": config.rate,
                 "duration_requested": duration,
                 "stats": _calc_stats([float(x["value"]) for x in samples]),
-                "started_at": self.state.get("started_at"),
+                "started_at": started_at,
                 "finished_at": time.time(),
                 "samples": samples,
             }
@@ -520,31 +510,31 @@ class _Xdm1000Worker(object):
         req_id,
         args,
     ):
-        """
-        statistics モードのテスト測定を実行する。
-        """
         job_id = args["job_id"]
         duration = float(args["duration"])
-        if duration <= 0:
+        settle = float(args.get("settle", 0.0))
+
+        if duration <= 0.0:
             raise ValueError("duration は正の値でなければならない。")
+
+        config = MeasurementConfig(
+            kind=args["kind"],
+            range_value=args.get("range_value", "AUTO"),
+            rate=args.get("rate", "F"),
+        )
+        self._apply_meas_config_if_needed(config)
 
         self.set_running(job_id, "statistics", args)
         self.stop_event.clear()
-
-        kind, range_value, rate = self._get_effective_meas_config(
-            kind=args.get("kind"),
-            range_value=args.get("range_value"),
-            rate=args.get("rate"),
-        )
-        self._apply_meas_config_if_needed(kind, range_value, rate)
-
-        time.sleep(float(args.get("settle", 0.0)))
         self.put_ok(req_id, {"job_id": job_id})
+
+        if settle > 0.0:
+            time.sleep(settle)
+
+        started_at = time.time()
 
         try:
             self.scpi.set_calc_function_average()
-
-            started_at = time.time()
             deadline = started_at + duration
             values = []
 
@@ -561,9 +551,9 @@ class _Xdm1000Worker(object):
                 "job_id": job_id,
                 "ok": True,
                 "stopped": self.stop_event.is_set(),
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
+                "kind": config.kind,
+                "range_value": config.range_value,
+                "rate": config.rate,
                 "duration_requested": duration,
                 "stats": {
                     "minimum": stats.minimum,
@@ -597,9 +587,7 @@ class _Xdm1000Worker(object):
         self,
         command,
     ):
-        """
-        command を振り分ける。
-        """
+        """受信 command を振り分けて処理する。"""
         req_id = command.get("req_id")
         name = command.get("cmd")
         args = command.get("args", {})
@@ -631,7 +619,7 @@ class _Xdm1000Worker(object):
     def run(
         self,
     ):
-        """worker process のメインループである。"""
+        """メインループを実行する。"""
         if not self.open():
             return
 
