@@ -129,10 +129,10 @@ class Xdm1000Ctrl:
         port: str,
         timeout: float = 2.0,
         baudrate: int = 115200,
+        use_process: bool = True,
         logger: Optional[Any] = None,
         log_level: Optional[str] = None,
         config: Any = None,
-        use_process: bool = True,
     ) -> None:
         """
         XDM1000 上位制御クラスを生成し、測定ワーカーを起動
