@@ -36,7 +36,6 @@ xdm1000_scpi.py に集約する。
 """
 
 import multiprocessing as mp
-import logging
 import queue
 import time
 import uuid
@@ -139,13 +138,14 @@ class Xdm1000Ctrl:
         """
         XDM1000 上位制御クラスを生成し、測定ワーカーを起動
         """
+        # XLogger が存在しない時に仕方がないのでデフォルトの logging を使う
         if logger is None:
+            import logging
+
             log_level = log_level or "INFO"
             logging.basicConfig(level=log_level.upper())
-            if config is not None and getattr(config, "SERVER_LOGGER_NAME", None) is not None:
-                logger = logging.getLogger(config.SERVER_LOGGER_NAME)
-            else:
-                logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)
+            # logger = get_silent_logger())
 
         self.logger = logger
         self.log_level = log_level
@@ -180,15 +180,13 @@ class Xdm1000Ctrl:
                 "timeout": timeout,
                 "baudrate": baudrate,
                 "logger": self.logger,
-                "logger_name": getattr(self.config, "SERVER_LOGGER_NAME", None),
+                "logger_name": getattr(self.logger, "name", None),
                 "log_level": self.log_level,
                 "config": self.config,
             },
             daemon=True,
         )
         self._process.start()
-
-        self._current_meas_config = None
 
     # ------------------------------------------------------------------
     # 内部 RPC
@@ -209,30 +207,6 @@ class Xdm1000Ctrl:
                 f"測定器は running 中である: "
                 f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
             )
-
-    def _is_same_meas_config(
-        self,
-        kind: MeasureKind,
-        range_value: Union[str, int, float] = "AUTO",
-        rate: str = "F",
-    ) -> bool:
-        """
-        親プロセス側が保持している現在の測定条件と一致するかを返す。
-        """
-        current = self._current_meas_config
-        if current is None:
-            return False
-
-        if current.kind != kind:
-            return False
-
-        if current.range_value != range_value:
-            return False
-
-        if current.rate != rate:
-            return False
-
-        return True
 
     def _rpc(
         self,
@@ -290,7 +264,6 @@ class Xdm1000Ctrl:
                 self._process.terminate()
                 self._process.join(timeout=2.0)
         self._manager.shutdown()
-        self._current_meas_config = None
 
     def disconnect(self) -> None:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
@@ -383,7 +356,6 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
         self._rpc("reset", timeout=10.0)
-        self._current_meas_config = None
 
     def set_meas_mode(
         self,
@@ -395,30 +367,11 @@ class Xdm1000Ctrl:
         測定種別・レンジ・速度を設定。測定中は拒否
         """
         self._require_not_running()
-
-        if self._is_same_meas_config(
-            kind=kind,
-            range_value=range_value,
-            rate=rate,
-        ):
-            return {
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
-            }
-
-        result = self._rpc(
+        return self._rpc(
             "set_meas_mode",
             {"kind": kind, "range_value": range_value, "rate": rate},
             timeout=10.0,
         )
-
-        self._current_meas_config = MeasurementConfig(
-            kind=kind,
-            range_value=range_value,
-            rate=rate,
-        )
-        return result
 
     def meas_one_shot(
         self,
@@ -434,19 +387,11 @@ class Xdm1000Ctrl:
         ``MEAS1?`` を 1 回読む。測定中は拒否する。
         """
         self._require_not_running()
-
-        result = self._rpc(
+        return self._rpc(
             "one_shot",
             {"kind": kind, "range_value": range_value, "rate": rate, "settle": settle},
             timeout=10.0 + max(0.0, settle),
         )
-
-        self._current_meas_config = MeasurementConfig(
-            kind=kind,
-            range_value=range_value,
-            rate=rate,
-        )
-        return result
 
     def meas(
         self,
