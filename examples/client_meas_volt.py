@@ -1,7 +1,9 @@
+# client_meas_volt.py（修正版）
+
 #!/usr/bin/env python3
 """XDM1000 電圧測定サンプル"""
 
-from xdm1000.server_fastapi.clients.sync_xdm1000_client import SyncXdm1000Client
+from xdm1000.server import SyncXdm1000Client
 
 HOST = "127.0.0.1"
 PORT = 8000
