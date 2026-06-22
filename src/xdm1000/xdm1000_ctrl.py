@@ -10,8 +10,8 @@ xdm1000_scpi.py に集約する。
 
 * Python threading は使わない。
 * ``remote()`` / ``local()`` は上位 API として公開しない。
-* 必要に応じて multiprocessing.Process で測定ワーカーを分離する。
-* process 利用時は測定ワーカープロセスだけがシリアルポートを保持する。
+* multiprocessing.Process で測定ワーカーを分離する。
+* 測定ワーカープロセスだけがシリアルポートを保持する。
 * 親プロセスはサーバー側 API 状態、結果、開始・停止要求を管理する。
 * 長時間測定中は ``running=True`` とし、別の測定・設定 API は拒否する。
 * ``get_state()``, ``stop_job()``, ``get_continuous_result()``,
@@ -106,10 +106,7 @@ class DeviceWorkerError(RuntimeError):
 
 @dataclass(frozen=True)
 class MeasurementConfig:
-    """
-    現在の測定条件を表す小さなデータ構造である。
-    worker を使わないときに使う
-    """
+    """現在の測定条件を表す小さなデータ構造である。"""
 
     kind: MeasureKind
     range_value: Union[str, int, float] = "AUTO"
@@ -119,7 +116,7 @@ class MeasurementConfig:
 class Xdm1000Ctrl:
     """XDM1000/XDM1000 を測定器として扱う上位制御クラスである。
 
-    必要ならコンストラクタで測定ワーカープロセスを起動する。ワーカープロセスは起動から
+    コンストラクタで測定ワーカープロセスを起動する。ワーカープロセスは起動から
     ``close()`` までシリアルポートを保持する。親プロセスはサーバー API として
     呼び出される想定であり、長時間測定中でも状態取得と結果取得だけは応答できる。
     """
@@ -129,10 +126,10 @@ class Xdm1000Ctrl:
         port: str,
         timeout: float = 2.0,
         baudrate: int = 115200,
-        use_process: bool = True,
         logger: Optional[Any] = None,
         log_level: Optional[str] = None,
         config: Any = None,
+        use_process: bool = True,
     ) -> None:
         """
         XDM1000 上位制御クラスを生成し、測定ワーカーを起動
@@ -146,14 +143,21 @@ class Xdm1000Ctrl:
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
-            use_process = getattr(config, "USE_PROCESS", use_process)
-            self.use_process = use_process
 
         self.port = port
         self.timeout = timeout
         self.baudrate = baudrate
 
         self._current_meas_config = None
+        self.scpi = None  # type: Optional[Xdm1000Scpi]
+        self._manager = None
+        self._state = None
+        self._result_store = None
+        self._command_q = None
+        self._response_q = None
+        self._stop_event = None
+        self._rpc_lock = None
+        self._process = None
 
         if self.use_process:
             self._manager = mp.Manager()
@@ -179,31 +183,13 @@ class Xdm1000Ctrl:
                 daemon=True,
             )
             self._process.start()
-            self._scpi = None
         else:
-            self._manager = None
-            self._state = {
-                "running": False,
-                "job_id": None,
-                "job_type": None,
-                "started_at": None,
-                "finished_at": None,
-                "error": None,
-                "traceback": None,
-                "message": "direct_ready",
-            }
-            self._result_store = {}
-            self._command_q = None
-            self._response_q = None
-            self._stop_event = None
-            self._rpc_lock = None
-            self._process = None
-            self._scpi = Xdm1000Scpi(
+            self.scpi = Xdm1000Scpi(
                 port=port,
                 timeout=timeout,
                 baudrate=baudrate,
             )
-            self._scpi.remote()
+            self.scpi.remote()
 
     # ------------------------------------------------------------------
     # 内部 RPC
@@ -225,6 +211,7 @@ class Xdm1000Ctrl:
                 f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
             )
 
+
     def _is_same_meas_config(
         self,
         kind: MeasureKind,
@@ -234,12 +221,16 @@ class Xdm1000Ctrl:
         current = self._current_meas_config
         if current is None:
             return False
+
         if current.kind != kind:
             return False
+
         if current.range_value != range_value:
             return False
+
         if current.rate != rate:
             return False
+
         return True
 
     def _configure_meas_direct(
@@ -248,107 +239,31 @@ class Xdm1000Ctrl:
         range_value: Union[str, int, float] = "AUTO",
     ) -> None:
         if kind == "voltage_dc":
-            self._scpi.configure_voltage_dc(range_value)
+            self.scpi.configure_voltage_dc(range_value)
         elif kind == "voltage_ac":
-            self._scpi.configure_voltage_ac(range_value)
+            self.scpi.configure_voltage_ac(range_value)
         elif kind == "current_dc":
-            self._scpi.configure_current_dc(range_value)
+            self.scpi.configure_current_dc(range_value)
         elif kind == "current_ac":
-            self._scpi.configure_current_ac(range_value)
+            self.scpi.configure_current_ac(range_value)
         elif kind == "resistance":
-            self._scpi.configure_resistance(range_value)
+            self.scpi.configure_resistance(range_value)
         elif kind == "fresistance":
-            self._scpi.configure_fresistance(range_value)
+            self.scpi.configure_fresistance(range_value)
         elif kind == "frequency":
-            self._scpi.configure_frequency()
+            self.scpi.configure_frequency()
         elif kind == "period":
-            self._scpi.configure_period()
+            self.scpi.configure_period()
         elif kind == "capacitance":
-            self._scpi.configure_capacitance(range_value)
+            self.scpi.configure_capacitance(range_value)
         elif kind == "temperature_rtd":
-            self._scpi.configure_temperature_rtd()
+            self.scpi.configure_temperature_rtd()
         elif kind == "diode":
-            self._scpi.configure_diode()
+            self.scpi.configure_diode()
         elif kind == "continuity":
-            self._scpi.configure_continuity()
+            self.scpi.configure_continuity()
         else:
-            raise ValueError(f"未対応の測定種別である: {kind!r}")
-
-    def _rpc_direct(
-        self,
-        name: str,
-        args: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        if args is None:
-            args = {}
-
-        if name == "idn":
-            return self._scpi.idn()
-
-        if name == "reset":
-            self._scpi.reset()
-            self._current_meas_config = None
-            return None
-
-        if name == "set_meas_mode":
-            kind = args["kind"]
-            range_value = args.get("range_value", "AUTO")
-            rate = args.get("rate", "F")
-
-            if not self._is_same_meas_config(kind, range_value, rate):
-                self._configure_meas_direct(kind, range_value)
-                self._scpi.set_rate(rate)
-                self._current_meas_config = MeasurementConfig(
-                    kind=kind,
-                    range_value=range_value,
-                    rate=rate,
-                )
-
-            self._state["meas_kind"] = kind
-            self._state["range_value"] = range_value
-            self._state["rate"] = rate
-
-            return {
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
-            }
-
-        if name == "one_shot":
-            kind = args["kind"]
-            range_value = args.get("range_value", "AUTO")
-            rate = args.get("rate", "F")
-            settle = float(args.get("settle", 0.0))
-
-            if not self._is_same_meas_config(kind, range_value, rate):
-                self._configure_meas_direct(kind, range_value)
-                self._scpi.set_rate(rate)
-                self._current_meas_config = MeasurementConfig(
-                    kind=kind,
-                    range_value=range_value,
-                    rate=rate,
-                )
-
-            if settle > 0.0:
-                time.sleep(settle)
-
-            t0 = time.perf_counter()
-            t1 = time.time()
-            value = self._scpi.meas_main()
-            t2 = time.time()
-            t3 = time.perf_counter()
-
-            return {
-                "kind": kind,
-                "range_value": range_value,
-                "rate": rate,
-                "value": value,
-                "host_time_start": t1,
-                "host_time_end": t2,
-                "read_elapsed": t3 - t0,
-            }
-
-        raise RuntimeError(f"direct mode では未対応のコマンドである: {name!r}")
+            raise ValueError("unsupported kind: {}".format(kind))
 
     def _rpc(
         self,
@@ -357,11 +272,10 @@ class Xdm1000Ctrl:
         timeout: Optional[float] = None,
     ) -> Any:
         """
-        process 利用時は親プロセスから測定ワーカーへ 1 コマンドを送る。
-        direct 利用時はこの場で SCPI を実行する。
+        親プロセスから測定ワーカーへ 1 コマンドを送る。
         """
         if not self.use_process:
-            return self._rpc_direct(name, args)
+            raise RuntimeError("use_process=False では _rpc は使わない。")
 
         req_id = uuid.uuid4().hex
 
@@ -440,13 +354,25 @@ class Xdm1000Ctrl:
         """
         現在の状態を返す。測定中でも呼べる。
         """
-        state = dict(self._state)
         if self.use_process:
+            state = dict(self._state)
             state["process_alive"] = self._process.is_alive()
-        else:
-            state["process_alive"] = False
-            state["direct_mode"] = True
-        return state
+            return state
+
+        return {
+            "process_alive": False,
+            "worker_alive": False,
+            "running": False,
+            "job_id": None,
+            "job_type": None,
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "traceback": None,
+            "message": "direct_scpi_mode",
+            "port": self.port,
+            "baudrate": self.baudrate,
+        }
 
     def is_running(self) -> bool:
         """
@@ -469,6 +395,9 @@ class Xdm1000Ctrl:
         """
         連続測定の結果を返す。測定終了後にまとめて取得する想定
         """
+        if not self.use_process:
+            return None
+
         result = self._result_store.get("continuous")
         if clear and "continuous" in self._result_store:
             del self._result_store["continuous"]
@@ -481,6 +410,9 @@ class Xdm1000Ctrl:
         """
         統計モードテストの結果を返す。
         """
+        if not self.use_process:
+            return None
+
         result = self._result_store.get("statistics")
         if clear and "statistics" in self._result_store:
             del self._result_store["statistics"]
@@ -496,7 +428,11 @@ class Xdm1000Ctrl:
         *IDN? を返す。測定中は拒否
         """
         self._require_not_running()
-        return self._rpc("idn", timeout=5.0)
+
+        if self.use_process:
+            return self._rpc("idn", timeout=5.0)
+
+        return self.scpi.idn()
 
     def _reset_scpi_internal(self) -> None:
         """
@@ -605,10 +541,10 @@ class Xdm1000Ctrl:
         ``get_continuous_result()`` で取得する。
         """
         self._require_not_running()
+
         if not self.use_process:
-            raise RuntimeError(
-                "use_process=False では start_continuous_meas は未対応である。"
-            )
+            raise RuntimeError("use_process=False では continuous 測定をサポートしない。")
+
         job_id = uuid.uuid4().hex
         return self._rpc(
             "start_continuous",
@@ -639,10 +575,10 @@ class Xdm1000Ctrl:
         現段階では duration 秒の厳密な平均値 API ではなく、テスト機能として扱う。
         """
         self._require_not_running()
+
         if not self.use_process:
-            raise RuntimeError(
-                "use_process=False では start_statistics_mode は未対応である。"
-            )
+            raise RuntimeError("use_process=False では statistics 測定をサポートしない。")
+
         job_id = uuid.uuid4().hex
         return self._rpc(
             "start_statistics",
