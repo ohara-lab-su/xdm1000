@@ -169,6 +169,8 @@ class Xdm1000Ctrl:
         )
         self._process.start()
 
+        self._current_meas_config = None
+
     # ------------------------------------------------------------------
     # 内部 RPC
     # ------------------------------------------------------------------
@@ -188,6 +190,30 @@ class Xdm1000Ctrl:
                 f"測定器は running 中である: "
                 f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
             )
+
+    def _is_same_meas_config(
+        self,
+        kind: MeasureKind,
+        range_value: Union[str, int, float] = "AUTO",
+        rate: str = "F",
+    ) -> bool:
+        """
+        親プロセス側が保持している現在の測定条件と一致するかを返す。
+        """
+        current = self._current_meas_config
+        if current is None:
+            return False
+
+        if current.kind != kind:
+            return False
+
+        if current.range_value != range_value:
+            return False
+
+        if current.rate != rate:
+            return False
+
+        return True
 
     def _rpc(
         self,
@@ -245,6 +271,7 @@ class Xdm1000Ctrl:
                 self._process.terminate()
                 self._process.join(timeout=2.0)
         self._manager.shutdown()
+        self._current_meas_config = None
 
     def disconnect(self) -> None:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
@@ -337,6 +364,7 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
         self._rpc("reset", timeout=10.0)
+        self._current_meas_config = None
 
     def set_meas_mode(
         self,
@@ -348,11 +376,30 @@ class Xdm1000Ctrl:
         測定種別・レンジ・速度を設定。測定中は拒否
         """
         self._require_not_running()
-        return self._rpc(
+
+        if self._is_same_meas_config(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
+        ):
+            return {
+                "kind": kind,
+                "range_value": range_value,
+                "rate": rate,
+            }
+
+        result = self._rpc(
             "set_meas_mode",
             {"kind": kind, "range_value": range_value, "rate": rate},
             timeout=10.0,
         )
+
+        self._current_meas_config = MeasurementConfig(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
+        )
+        return result
 
     def meas_one_shot(
         self,
@@ -368,11 +415,19 @@ class Xdm1000Ctrl:
         ``MEAS1?`` を 1 回読む。測定中は拒否する。
         """
         self._require_not_running()
-        return self._rpc(
+
+        result = self._rpc(
             "one_shot",
             {"kind": kind, "range_value": range_value, "rate": rate, "settle": settle},
             timeout=10.0 + max(0.0, settle),
         )
+
+        self._current_meas_config = MeasurementConfig(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
+        )
+        return result
 
     def meas(
         self,
