@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """OWON XDM1000 / XDM1000 用の上位制御クラスである。
 
 このファイルは「測定器としての使いやすい API」を提供する上位層である。
@@ -39,30 +39,11 @@ import multiprocessing as mp
 import queue
 import time
 import uuid
-from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
-
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal
 
 from xdm1000.xdm1000_worker import _Xdm1000Worker
 
-MeasureKind = Literal[
-    "voltage_dc",
-    "voltage_ac",
-    "current_dc",
-    "current_ac",
-    "resistance",
-    "fresistance",
-    "frequency",
-    "period",
-    "capacitance",
-    "temperature_rtd",
-    "diode",
-    "continuity",
-]
+MeasureKind = str
 
 
 def _worker_loop(
@@ -103,13 +84,18 @@ class DeviceWorkerError(RuntimeError):
     """測定ワーカープロセス側で例外が発生したことを表す。"""
 
 
-@dataclass(frozen=True)
-class MeasurementConfig:
+class MeasurementConfig(object):
     """現在の測定条件を表す小さなデータ構造である。"""
 
-    kind: MeasureKind
-    range_value: Union[str, int, float] = "AUTO"
-    rate: str = "F"
+    def __init__(
+        self,
+        kind,
+        range_value="AUTO",
+        rate="F",
+    ):
+        self.kind = kind
+        self.range_value = range_value
+        self.rate = rate
 
 
 class Xdm1000Ctrl:
@@ -169,42 +155,6 @@ class Xdm1000Ctrl:
         )
         self._process.start()
 
-    def _wait_worker_ready(
-        self,
-        timeout: float = 5.0,
-        poll_interval: float = 0.05,
-    ) -> None:
-        """
-        worker 起動完了または起動失敗を待つ。
-        """
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if not self._process.is_alive():
-                raise RuntimeError(
-                    "worker process が起動直後に終了した: {0!r}".format(
-                        dict(self._state),
-                    )
-                )
-
-            message = self._state.get("message")
-            if message == "worker_ready":
-                return
-
-            error = self._state.get("error")
-            if error:
-                raise RuntimeError(
-                    "worker 起動失敗: {0}\n{1}".format(
-                        error,
-                        self._state.get("traceback", ""),
-                    )
-                )
-
-            time.sleep(poll_interval)
-
-        raise TimeoutError(
-            "worker 起動待ち timeout: {0!r}".format(dict(self._state))
-        )
-
     # ------------------------------------------------------------------
     # 内部 RPC
     # ------------------------------------------------------------------
@@ -221,8 +171,11 @@ class Xdm1000Ctrl:
         """
         if self._is_running():
             raise DeviceBusyError(
-                f"測定器は running 中である: "
-                f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
+                "測定器は running 中である: "
+                "job_type={0}, job_id={1}".format(
+                    self._state.get("job_type"),
+                    self._state.get("job_id"),
+                )
             )
 
     def _rpc(
@@ -245,22 +198,25 @@ class Xdm1000Ctrl:
                     None if deadline is None else max(0.0, deadline - time.time())
                 )
                 if deadline is not None and remaining <= 0:
-                    raise TimeoutError(f"worker 応答待ち timeout: {name!r}")
+                    raise TimeoutError("worker 応答待ち timeout: {0!r}".format(name))
                 try:
                     response = self._response_q.get(timeout=remaining)
                 except queue.Empty as exc:
-                    raise TimeoutError(f"worker 応答待ち timeout: {name!r}") from exc
+                    raise TimeoutError("worker 応答待ち timeout: {0!r}".format(name)) from exc
 
                 if response.get("req_id") != req_id:
                     raise RuntimeError(
-                        f"worker response の req_id が一致しない: {response!r}"
+                        "worker response の req_id が一致しない: {0!r}".format(response)
                     )
 
                 if response.get("ok"):
                     return response.get("result")
 
                 raise DeviceWorkerError(
-                    f"{response.get('error')}\n{response.get('traceback', '')}"
+                    "{0}\n{1}".format(
+                        response.get("error"),
+                        response.get("traceback", ""),
+                    )
                 )
 
     # ------------------------------------------------------------------
@@ -286,7 +242,7 @@ class Xdm1000Ctrl:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
         self.close()
 
-    def __enter__(self) -> "Xdm1000Ctrl":
+    def __enter__(self):
         """
         with 文用のエントリ
         """
@@ -472,7 +428,7 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
         job_id = uuid.uuid4().hex
-        result = self._rpc(
+        return self._rpc(
             "start_continuous",
             {
                 "job_id": job_id,
@@ -485,12 +441,6 @@ class Xdm1000Ctrl:
             },
             timeout=10.0 + max(0.0, settle),
         )
-        self._current_meas_config = MeasurementConfig(
-            kind=kind,
-            range_value=range_value,
-            rate=rate,
-        )
-        return result
 
     def start_statistics_mode(
         self,
@@ -508,7 +458,7 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
         job_id = uuid.uuid4().hex
-        result = self._rpc(
+        return self._rpc(
             "start_statistics",
             {
                 "job_id": job_id,
@@ -520,12 +470,6 @@ class Xdm1000Ctrl:
             },
             timeout=10.0 + max(0.0, settle),
         )
-        self._current_meas_config = MeasurementConfig(
-            kind=kind,
-            range_value=range_value,
-            rate=rate,
-        )
-        return result
 
     def wait_until_done(self, poll_interval: float = 0.2) -> Dict[str, Any]:
         """
