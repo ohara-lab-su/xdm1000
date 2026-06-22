@@ -19,6 +19,7 @@ class AverageStats(object):
     """
 
     def __init__(self, minimum, maximum, average, count):
+        """インスタンスを初期化する。"""
         self.minimum = minimum
         self.maximum = maximum
         self.average = average
@@ -197,42 +198,55 @@ class Xdm1000Scpi(object):
         return self.query_int("SYSTem:BEEPer:STATe?") != 0
 
     def configure_voltage_dc(self, range_value="AUTO"):
+        """configure_voltage_dc を実行する。"""
         self.write("CONFigure:VOLTage:DC {0}".format(range_value))
 
     def configure_voltage_ac(self, range_value="AUTO"):
+        """configure_voltage_ac を実行する。"""
         self.write("CONFigure:VOLTage:AC {0}".format(range_value))
 
     def configure_current_dc(self, range_value="AUTO"):
+        """configure_current_dc を実行する。"""
         self.write("CONFigure:CURRent:DC {0}".format(range_value))
 
     def configure_current_ac(self, range_value="AUTO"):
+        """configure_current_ac を実行する。"""
         self.write("CONFigure:CURRent:AC {0}".format(range_value))
 
     def configure_resistance(self, range_value="AUTO"):
+        """configure_resistance を実行する。"""
         self.write("CONFigure:RESistance {0}".format(range_value))
 
     def configure_fresistance(self, range_value="AUTO"):
+        """configure_fresistance を実行する。"""
         self.write("CONFigure:FRESistance {0}".format(range_value))
 
     def configure_frequency(self):
+        """configure_frequency を実行する。"""
         self.write("CONFigure:FREQuency")
 
     def configure_period(self):
+        """configure_period を実行する。"""
         self.write("CONFigure:PERiod")
 
     def configure_capacitance(self, range_value="AUTO"):
+        """configure_capacitance を実行する。"""
         self.write("CONFigure:CAPacitance {0}".format(range_value))
 
     def configure_temperature_rtd(self):
+        """configure_temperature_rtd を実行する。"""
         self.write("CONFigure:TEMPerature:RTD")
 
     def configure_diode(self):
+        """configure_diode を実行する。"""
         self.write("CONFigure:DIODe")
 
     def configure_continuity(self):
+        """configure_continuity を実行する。"""
         self.write("CONFigure:CONTinuity")
 
     def set_calc_function_average(self):
+        """set_calc_function_average を実行する。"""
         self.write("CALCulate:FUNCtion AVERage")
 
     def get_average_all(self):

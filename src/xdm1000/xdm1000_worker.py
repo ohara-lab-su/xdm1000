@@ -21,11 +21,13 @@ class MeasurementConfig(object):
     """
 
     def __init__(self, kind, range_value="AUTO", rate="F"):
+        """インスタンスを初期化する。"""
         self.kind = kind
         self.range_value = range_value
         self.rate = rate
 
     def equals(self, other):
+        """equals を実行する。"""
         if other is None:
             return False
         if self.kind != other.kind:
@@ -124,6 +126,7 @@ class _Xdm1000Worker(object):
         log_level=None,
         config=None,
     ):
+        """インスタンスを初期化する。"""
         if logger is None:
             import logging
 
@@ -151,6 +154,7 @@ class _Xdm1000Worker(object):
         self._current_config = None
 
     def set_idle(self, message="idle"):
+        """set_idle を実行する。"""
         self.state["running"] = False
         self.state["job_id"] = None
         self.state["job_type"] = None
@@ -164,6 +168,7 @@ class _Xdm1000Worker(object):
         self.state["baudrate"] = self.baudrate
 
     def set_running(self, job_id, job_type, args):
+        """set_running を実行する。"""
         self.state["running"] = True
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
@@ -177,11 +182,13 @@ class _Xdm1000Worker(object):
         self.state["rate"] = args.get("rate")
 
     def finish(self, message="finished"):
+        """finish を実行する。"""
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["message"] = message
 
     def fail(self, exc):
+        """fail を実行する。"""
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["error"] = repr(exc)
@@ -189,6 +196,7 @@ class _Xdm1000Worker(object):
         self.state["message"] = "failed"
 
     def open(self):
+        """必要な接続を開く。"""
         try:
             self.scpi = Xdm1000Scpi(
                 port=self.port,
@@ -206,6 +214,7 @@ class _Xdm1000Worker(object):
             return False
 
     def close(self):
+        """保持している資源を解放する。"""
         try:
             if self.scpi is not None:
                 try:
@@ -220,9 +229,11 @@ class _Xdm1000Worker(object):
                 pass
 
     def put_ok(self, req_id, result):
+        """put_ok を実行する。"""
         self.response_q.put({"req_id": req_id, "ok": True, "result": result})
 
     def put_error(self, req_id, exc):
+        """put_error を実行する。"""
         self.response_q.put(
             {
                 "req_id": req_id,
@@ -233,6 +244,7 @@ class _Xdm1000Worker(object):
         )
 
     def _resolved_config(self, args):
+        """None 引数を既存設定または既定値で補完する。"""
         kind = args.get("kind")
         range_value = args.get("range_value")
         rate = args.get("rate")
@@ -252,6 +264,7 @@ class _Xdm1000Worker(object):
         return MeasurementConfig(kind, range_value, rate)
 
     def _apply_config_if_needed(self, config):
+        """必要なときだけ測定設定を反映する。"""
         if config.equals(self._current_config):
             return
 
@@ -274,14 +287,17 @@ class _Xdm1000Worker(object):
         self._current_config = config
 
     def handle_idn(self, req_id):
+        """IDN 要求を処理する。"""
         self.put_ok(req_id, self.scpi.idn())
 
     def handle_reset(self, req_id):
+        """reset 要求を処理する。"""
         self.scpi.reset()
         self._current_config = None
         self.put_ok(req_id, None)
 
     def handle_set_meas_mode(self, req_id, args):
+        """測定条件設定要求を処理する。"""
         config = self._resolved_config(args)
         self._apply_config_if_needed(config)
         self.put_ok(
@@ -294,6 +310,7 @@ class _Xdm1000Worker(object):
         )
 
     def handle_one_shot(self, req_id, args):
+        """1 shot 測定要求を処理する。"""
         config = self._resolved_config(args)
         self._apply_config_if_needed(config)
 
@@ -320,6 +337,7 @@ class _Xdm1000Worker(object):
         )
 
     def handle_start_continuous(self, req_id, args):
+        """continuous 測定要求を処理する。"""
         job_id = args["job_id"]
         duration = float(args["duration"])
         interval = float(args.get("interval", 0.0))
@@ -394,6 +412,7 @@ class _Xdm1000Worker(object):
             self.fail(exc)
 
     def handle_start_statistics(self, req_id, args):
+        """statistics 測定要求を処理する。"""
         job_id = args["job_id"]
         duration = float(args["duration"])
         settle = float(args.get("settle", 0.0))
@@ -460,6 +479,7 @@ class _Xdm1000Worker(object):
             self.fail(exc)
 
     def handle_command(self, command):
+        """受信 command を振り分けて処理する。"""
         req_id = command.get("req_id")
         name = command.get("cmd")
         args = command.get("args", {})
@@ -489,6 +509,7 @@ class _Xdm1000Worker(object):
         return True
 
     def run(self):
+        """メインループを実行する。"""
         if not self.open():
             return
 
