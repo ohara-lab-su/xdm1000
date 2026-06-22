@@ -1,13 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """XDM1000 用 sync client である。"""
 
-from __future__ import annotations
-
-from typing import Any, Optional
-
-from ese774_frame.clients.sync_device_client import SyncDeviceClient
-
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
+from ese774_frame.clients.sync_device_client import SyncDeviceClient
 
 
 class SyncXdm1000Client(SyncDeviceClient):
@@ -15,15 +11,32 @@ class SyncXdm1000Client(SyncDeviceClient):
 
     def __init__(
         self,
-        server_ip: str = "127.0.0.1",
-        server_port: int = 8000,
-        base_url: Optional[str] = None,
-        api_spec: Optional[list] = None,
-        logger: Optional[Any] = None,
-        log_level: str = "INFO",
-        object_name: str = "xdm1000",
+        config=None,
+        server_ip=None,
+        server_port=None,
+        base_url=None,
+        api_spec=None,
+        logger=None,
+        log_level="INFO",
+        object_name="xdm1000",
     ):
-        super().__init__(
+        """
+        XDM1000 用 sync client を初期化する。
+
+        ese774_frame は透過型であるため、ctrl と同様に config を受けられるようにする。
+        config があれば SERVER_IP / SERVER_PORT を優先し、無ければ引数を使う。
+        """
+        if config is not None:
+            server_ip = getattr(config, "SERVER_IP", server_ip)
+            server_port = getattr(config, "SERVER_PORT", server_port)
+
+        if server_ip is None:
+            server_ip = "127.0.0.1"
+        if server_port is None:
+            server_port = 8000
+
+        SyncDeviceClient.__init__(
+            self,
             server_ip=server_ip,
             server_port=server_port,
             base_url=base_url,

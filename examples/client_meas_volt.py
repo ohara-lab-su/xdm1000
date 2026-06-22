@@ -13,7 +13,7 @@ PORT = 8000
 def main():
     # dmm = SyncXdm1000Client(HOST, PORT)
     # dmm = SyncXdm1000Client(config="xdm1000.yml")
-    dmm = DeviceProxy("Xdm1000Ctrl", config="xdm1000.yml")
+    dmm = DeviceProxy("Xdm1000Ctrl", config="xdm1000.yml", async_mode=False)
 
     print(dmm.meas_one_shot("voltage_dc"))
 
