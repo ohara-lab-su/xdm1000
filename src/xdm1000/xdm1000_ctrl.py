@@ -149,7 +149,26 @@ class Xdm1000Ctrl:
         self.baudrate = baudrate
 
         self._current_meas_config = None
+        self._direct_state = {
+            "worker_alive": False,
+            "port": self.port,
+            "baudrate": self.baudrate,
+            "running": False,
+            "job_id": None,
+            "job_type": None,
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "traceback": None,
+            "message": "direct_scpi_mode",
+        }
+        self._direct_result_store = {
+            "continuous": None,
+            "statistics": None,
+        }
+        self._direct_stop_requested = False
         self.scpi = None  # type: Optional[Xdm1000Scpi]
+
         self._manager = None
         self._state = None
         self._result_store = None
@@ -199,16 +218,25 @@ class Xdm1000Ctrl:
         """
         長時間測定中かどうかを返す。
         """
-        return bool(self._state.get("running", False))
+        if self.use_process:
+            return bool(self._state.get("running", False))
+        return bool(self._direct_state.get("running", False))
 
     def _require_not_running(self) -> None:
         """
         測定中なら測定・設定 API を拒否
         """
         if self._is_running():
+            if self.use_process:
+                job_type = self._state.get("job_type")
+                job_id = self._state.get("job_id")
+            else:
+                job_type = self._direct_state.get("job_type")
+                job_id = self._direct_state.get("job_id")
+
             raise DeviceBusyError(
                 f"測定器は running 中である: "
-                f"job_type={self._state.get('job_type')}, job_id={self._state.get('job_id')}"
+                f"job_type={job_type}, job_id={job_id}"
             )
 
 
@@ -221,23 +249,23 @@ class Xdm1000Ctrl:
         current = self._current_meas_config
         if current is None:
             return False
-
         if current.kind != kind:
             return False
-
         if current.range_value != range_value:
             return False
-
         if current.rate != rate:
             return False
-
         return True
 
     def _configure_meas_direct(
         self,
         kind: MeasureKind,
         range_value: Union[str, int, float] = "AUTO",
+        rate: str = "F",
     ) -> None:
+        if self._is_same_meas_config(kind, range_value, rate):
+            return
+
         if kind == "voltage_dc":
             self.scpi.configure_voltage_dc(range_value)
         elif kind == "voltage_ac":
@@ -264,6 +292,34 @@ class Xdm1000Ctrl:
             self.scpi.configure_continuity()
         else:
             raise ValueError("unsupported kind: {}".format(kind))
+
+        self.scpi.set_rate(rate)
+        self._current_meas_config = MeasurementConfig(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
+        )
+
+    def _direct_begin_job(
+        self,
+        job_id: str,
+        job_type: str,
+    ) -> None:
+        self._direct_state["running"] = True
+        self._direct_state["job_id"] = job_id
+        self._direct_state["job_type"] = job_type
+        self._direct_state["started_at"] = time.time()
+        self._direct_state["finished_at"] = None
+        self._direct_state["error"] = None
+        self._direct_state["traceback"] = None
+        self._direct_stop_requested = False
+
+    def _direct_finish_job(self) -> None:
+        self._direct_state["running"] = False
+        self._direct_state["job_id"] = None
+        self._direct_state["job_type"] = None
+        self._direct_state["finished_at"] = time.time()
+        self._direct_stop_requested = False
 
     def _rpc(
         self,
@@ -314,16 +370,33 @@ class Xdm1000Ctrl:
         """
         測定ワーカープロセスを終了
         """
-        if self._process.is_alive():
-            try:
-                self._rpc("shutdown", timeout=2.0)
-            except Exception:
-                pass
-            self._process.join(timeout=2.0)
-            if self._process.is_alive():
-                self._process.terminate()
+        if self.use_process:
+            if self._process is not None and self._process.is_alive():
+                try:
+                    self._rpc("shutdown", timeout=2.0)
+                except Exception:
+                    pass
                 self._process.join(timeout=2.0)
-        self._manager.shutdown()
+                if self._process.is_alive():
+                    self._process.terminate()
+                    self._process.join(timeout=2.0)
+
+            if self._manager is not None:
+                try:
+                    self._manager.shutdown()
+                except Exception:
+                    pass
+        else:
+            if self.scpi is not None:
+                try:
+                    self.scpi.local()
+                except Exception:
+                    pass
+                try:
+                    self.scpi.close()
+                except Exception:
+                    pass
+                self.scpi = None
 
     def disconnect(self) -> None:
         """サーバー停止時に呼ばれる解放用エイリアスである。"""
@@ -359,20 +432,9 @@ class Xdm1000Ctrl:
             state["process_alive"] = self._process.is_alive()
             return state
 
-        return {
-            "process_alive": False,
-            "worker_alive": False,
-            "running": False,
-            "job_id": None,
-            "job_type": None,
-            "started_at": None,
-            "finished_at": None,
-            "error": None,
-            "traceback": None,
-            "message": "direct_scpi_mode",
-            "port": self.port,
-            "baudrate": self.baudrate,
-        }
+        state = dict(self._direct_state)
+        state["process_alive"] = False
+        return state
 
     def is_running(self) -> bool:
         """
@@ -386,6 +448,8 @@ class Xdm1000Ctrl:
         """
         if self.use_process:
             self._stop_event.set()
+        else:
+            self._direct_stop_requested = True
         return self.get_state()
 
     def get_continuous_result(
@@ -395,12 +459,15 @@ class Xdm1000Ctrl:
         """
         連続測定の結果を返す。測定終了後にまとめて取得する想定
         """
-        if not self.use_process:
-            return None
+        if self.use_process:
+            result = self._result_store.get("continuous")
+            if clear and "continuous" in self._result_store:
+                del self._result_store["continuous"]
+            return result
 
-        result = self._result_store.get("continuous")
-        if clear and "continuous" in self._result_store:
-            del self._result_store["continuous"]
+        result = self._direct_result_store.get("continuous")
+        if clear:
+            self._direct_result_store["continuous"] = None
         return result
 
     def get_statistics_result(
@@ -410,12 +477,15 @@ class Xdm1000Ctrl:
         """
         統計モードテストの結果を返す。
         """
-        if not self.use_process:
-            return None
+        if self.use_process:
+            result = self._result_store.get("statistics")
+            if clear and "statistics" in self._result_store:
+                del self._result_store["statistics"]
+            return result
 
-        result = self._result_store.get("statistics")
-        if clear and "statistics" in self._result_store:
-            del self._result_store["statistics"]
+        result = self._direct_result_store.get("statistics")
+        if clear:
+            self._direct_result_store["statistics"] = None
         return result
 
     # ------------------------------------------------------------------
@@ -428,10 +498,8 @@ class Xdm1000Ctrl:
         *IDN? を返す。測定中は拒否
         """
         self._require_not_running()
-
         if self.use_process:
             return self._rpc("idn", timeout=5.0)
-
         return self.scpi.idn()
 
     def _reset_scpi_internal(self) -> None:
@@ -442,7 +510,11 @@ class Xdm1000Ctrl:
         測定中は拒否する。
         """
         self._require_not_running()
-        self._rpc("reset", timeout=10.0)
+        if self.use_process:
+            self._rpc("reset", timeout=10.0)
+        else:
+            self.scpi.reset()
+            self._current_meas_config = None
 
     def set_meas_mode(
         self,
@@ -454,11 +526,24 @@ class Xdm1000Ctrl:
         測定種別・レンジ・速度を設定。測定中は拒否
         """
         self._require_not_running()
-        return self._rpc(
-            "set_meas_mode",
-            {"kind": kind, "range_value": range_value, "rate": rate},
-            timeout=10.0,
+
+        if self.use_process:
+            return self._rpc(
+                "set_meas_mode",
+                {"kind": kind, "range_value": range_value, "rate": rate},
+                timeout=10.0,
+            )
+
+        self._configure_meas_direct(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
         )
+        return {
+            "kind": kind,
+            "range_value": range_value,
+            "rate": rate,
+        }
 
     def meas_one_shot(
         self,
@@ -474,11 +559,33 @@ class Xdm1000Ctrl:
         ``MEAS1?`` を 1 回読む。測定中は拒否する。
         """
         self._require_not_running()
-        return self._rpc(
-            "one_shot",
-            {"kind": kind, "range_value": range_value, "rate": rate, "settle": settle},
-            timeout=10.0 + max(0.0, settle),
+
+        if self.use_process:
+            return self._rpc(
+                "one_shot",
+                {"kind": kind, "range_value": range_value, "rate": rate, "settle": settle},
+                timeout=10.0 + max(0.0, settle),
+            )
+
+        self._configure_meas_direct(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
         )
+        time.sleep(max(0.0, settle))
+        t0 = time.perf_counter()
+        before = time.time()
+        value = self.scpi.meas_main()
+        after = time.time()
+        return {
+            "kind": kind,
+            "range_value": range_value,
+            "rate": rate,
+            "value": value,
+            "host_time_start": before,
+            "host_time_end": after,
+            "read_elapsed": time.perf_counter() - t0,
+        }
 
     def meas(
         self,
@@ -542,23 +649,84 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
 
-        if not self.use_process:
-            raise RuntimeError("use_process=False では continuous 測定をサポートしない。")
+        if self.use_process:
+            job_id = uuid.uuid4().hex
+            return self._rpc(
+                "start_continuous",
+                {
+                    "job_id": job_id,
+                    "kind": kind,
+                    "duration": duration,
+                    "range_value": range_value,
+                    "rate": rate,
+                    "interval": interval,
+                    "settle": settle,
+                },
+                timeout=10.0 + max(0.0, settle),
+            )
+
+        if duration <= 0:
+            raise ValueError("duration は正の値でなければならない。")
+        if interval < 0:
+            raise ValueError("interval は 0 以上でなければならない。")
 
         job_id = uuid.uuid4().hex
-        return self._rpc(
-            "start_continuous",
-            {
-                "job_id": job_id,
-                "kind": kind,
-                "duration": duration,
-                "range_value": range_value,
-                "rate": rate,
-                "interval": interval,
-                "settle": settle,
-            },
-            timeout=10.0 + max(0.0, settle),
+        self._direct_begin_job(job_id, "continuous")
+        self._configure_meas_direct(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
         )
+        time.sleep(max(0.0, settle))
+
+        started_at = time.time()
+        deadline = started_at + duration
+        samples = []
+
+        while True:
+            now = time.time()
+            if now >= deadline:
+                break
+            if self._direct_stop_requested:
+                break
+
+            t0 = time.perf_counter()
+            before = time.time()
+            value = self.scpi.meas_main()
+            after = time.time()
+
+            samples.append(
+                {
+                    "host_time_start": before,
+                    "host_time_end": after,
+                    "read_elapsed": time.perf_counter() - t0,
+                    "value": value,
+                }
+            )
+
+            if interval > 0:
+                next_time = before + interval
+                remain = next_time - time.time()
+                if remain > 0:
+                    time.sleep(remain)
+
+        finished_at = time.time()
+        result = {
+            "job_id": job_id,
+            "kind": kind,
+            "range_value": range_value,
+            "rate": rate,
+            "interval": interval,
+            "duration": duration,
+            "requested_stop": bool(self._direct_stop_requested),
+            "host_time_start": started_at,
+            "host_time_end": finished_at,
+            "samples": samples,
+            "count": len(samples),
+        }
+        self._direct_result_store["continuous"] = result
+        self._direct_finish_job()
+        return {"job_id": job_id}
 
     def start_statistics_mode(
         self,
@@ -576,22 +744,75 @@ class Xdm1000Ctrl:
         """
         self._require_not_running()
 
-        if not self.use_process:
-            raise RuntimeError("use_process=False では statistics 測定をサポートしない。")
+        if self.use_process:
+            job_id = uuid.uuid4().hex
+            return self._rpc(
+                "start_statistics",
+                {
+                    "job_id": job_id,
+                    "kind": kind,
+                    "duration": duration,
+                    "range_value": range_value,
+                    "rate": rate,
+                    "settle": settle,
+                },
+                timeout=10.0 + max(0.0, settle),
+            )
+
+        if duration <= 0:
+            raise ValueError("duration は正の値でなければならない。")
 
         job_id = uuid.uuid4().hex
-        return self._rpc(
-            "start_statistics",
-            {
-                "job_id": job_id,
-                "kind": kind,
-                "duration": duration,
-                "range_value": range_value,
-                "rate": rate,
-                "settle": settle,
-            },
-            timeout=10.0 + max(0.0, settle),
+        self._direct_begin_job(job_id, "statistics")
+        self._configure_meas_direct(
+            kind=kind,
+            range_value=range_value,
+            rate=rate,
         )
+        time.sleep(max(0.0, settle))
+
+        values = []
+        started_at = time.time()
+        deadline = started_at + duration
+
+        while True:
+            now = time.time()
+            if now >= deadline:
+                break
+            if self._direct_stop_requested:
+                break
+            values.append(self.scpi.meas_main())
+
+        finished_at = time.time()
+        if values:
+            minimum = min(values)
+            maximum = max(values)
+            average = sum(values) / len(values)
+            count = len(values)
+        else:
+            minimum = None
+            maximum = None
+            average = None
+            count = 0
+
+        result = {
+            "job_id": job_id,
+            "kind": kind,
+            "range_value": range_value,
+            "rate": rate,
+            "duration": duration,
+            "requested_stop": bool(self._direct_stop_requested),
+            "host_time_start": started_at,
+            "host_time_end": finished_at,
+            "minimum": minimum,
+            "maximum": maximum,
+            "average": average,
+            "count": count,
+            "values": values,
+        }
+        self._direct_result_store["statistics"] = result
+        self._direct_finish_job()
+        return {"job_id": job_id}
 
     def wait_until_done(self, poll_interval: float = 0.2) -> Dict[str, Any]:
         """
