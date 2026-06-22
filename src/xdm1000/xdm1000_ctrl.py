@@ -72,11 +72,13 @@ def _worker_loop(
 
 class DeviceBusyError(RuntimeError):
     """測定器が長時間測定中のため、測定・設定要求を拒否したことを表す。"""
+
     pass
 
 
 class DeviceWorkerError(RuntimeError):
     """測定ワーカープロセス側で例外が発生したことを表す。"""
+
     pass
 
 
@@ -366,9 +368,7 @@ class Xdm1000Ctrl(object):
 
                 if response.get("req_id") != req_id:
                     raise RuntimeError(
-                        "worker response の req_id が一致しない: {0!r}".format(
-                            response
-                        )
+                        "worker response の req_id が一致しない: {0!r}".format(response)
                     )
 
                 if response.get("ok"):
@@ -938,7 +938,7 @@ def main(
         )
 
         print("meas() x 5")
-        for _ in range(5):
+        for _ in range(9):
             print(
                 dmm.meas(
                     settle=0.2,
