@@ -52,21 +52,21 @@ class Xdm1000Scpi(object):
         config=None,
     ):
         """USB-Serial ポートを開く。"""
+        # XLogger が存在しない時はデフォルトの logging を使う
+        if logger is None:
+            import logging
+
+            log_level = log_level or "INFO"
+            logging.basicConfig(level=log_level.upper())
+            logger = logging.getLogger(__name__)
+
         if config is not None:
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
 
-            # if logger_name is None:
-            #     logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
             if log_level is None:
                 log_level = getattr(config, "LOGGER_LEVEL", log_level)
-
-        if logger is None:
-            import logging
-
-            resolved_level = log_level or "INFO"
-            logging.basicConfig(level=resolved_level.upper())
 
         self._logger = logger
         self._config = config
@@ -301,7 +301,7 @@ class Xdm1000Scpi(object):
     def get_rate(
         self,
     ):
-        """測定速度を取得する。F が高速、M が中速、L が低速である。"""
+        """測定速度を取得する。"""
         return self.query("RATE?")
 
     def meas_raw(
@@ -335,19 +335,20 @@ class Xdm1000Scpi(object):
         return self.query_float("MEAS2?")
 
 
-def main():
-    """DC 電圧を 10 回読む最小サンプルである。"""
-    try:
-        from xdm1000.config import Config
+def main(
+    config_path="xdm1000_example.yml",
+):
+    """SCPI クラス単独の動作確認用サンプルである。"""
+    from xdm1000.config import Config
 
-        config = Config()
+    config = None
+    try:
+        config = Config(config_path)
     except Exception:
         config = None
 
-    port = "/dev/cu.usbserial-10"
-
     dmm = Xdm1000Scpi(
-        port=port,
+        port="/dev/cu.usbserial-10",
         timeout=2.0,
         baudrate=115200,
         config=config,
