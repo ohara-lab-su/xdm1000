@@ -74,7 +74,9 @@ def _worker_loop(
     port: str,
     timeout: float,
     baudrate: int,
-    logger_name: Optional[str] = None,
+    logger: Optional[Any] = None,
+    log_level: Optional[str] = None,
+    config: Any = None,
 ) -> None:
     """測定ワーカープロセスの entry point である。
 
@@ -90,7 +92,9 @@ def _worker_loop(
         port=port,
         timeout=timeout,
         baudrate=baudrate,
-        logger_name=logger_name,
+        logger=logger,
+        log_level=log_level,
+        config=config,
     )
     worker.run()
 
@@ -164,6 +168,9 @@ class Xdm1000Ctrl:
                 "port": port,
                 "timeout": timeout,
                 "baudrate": baudrate,
+                "logger": self.logger,
+                "log_level": self.log_level,
+                "config": self.config,
             },
             daemon=True,
         )
