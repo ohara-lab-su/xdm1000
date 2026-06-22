@@ -1,7 +1,6 @@
-# xdm1000 用設定ファイル例
+# xdm1000 用設定例
 SERVER_HOST: "127.0.0.1"
 SERVER_PORT: 8000
-
 CLIENT_LOGGER_NAME: "xdm1000_client"
 SERVER_LOGGER_NAME: "xdm1000_server"
 
