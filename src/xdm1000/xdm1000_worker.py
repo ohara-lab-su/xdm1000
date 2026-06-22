@@ -1,28 +1,23 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# coding:utf-8
 """
 XDM1000 の process worker である。
 
-worker は process 使用時の測定実行責務を持つ。
-測定条件キャッシュ、continuous/statistics のループ、結果保存を担当する。
-SCPI の低レベル送受信は xdm1000_scpi.py に委譲する。
+親側の Xdm1000Ctrl は queue、process、state、result を管理する。
+この worker は子プロセス内でだけ生成され、Xdm1000Scpi を保持して
+SCPI コマンドと長時間測定を実行する。
 """
 
-import logging
+import math
 import time
 import traceback
-
-try:
-    from x_logger import get_logger
-except Exception:
-    get_logger = None
 
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 
 
 class MeasurementConfig(object):
     """
-    現在の測定条件を表す小さな構造体である。
+    現在の測定条件を表す小さなデータ構造である。
     """
 
     def __init__(self, kind, range_value="AUTO", rate="F"):
@@ -31,9 +26,6 @@ class MeasurementConfig(object):
         self.rate = rate
 
     def equals(self, other):
-        """
-        他の設定と同一かを返す。
-        """
         if other is None:
             return False
         if self.kind != other.kind:
@@ -44,20 +36,10 @@ class MeasurementConfig(object):
             return False
         return True
 
-    def to_dict(self):
-        """
-        dict へ変換する。
-        """
-        return {
-            "kind": self.kind,
-            "range_value": self.range_value,
-            "rate": self.rate,
-        }
-
 
 def _sample_clock(t0_perf):
     """
-    host 側時刻情報を返す。
+    ホスト PC 側の時刻情報を作る。
     """
     perf = time.perf_counter()
     return {
@@ -67,34 +49,9 @@ def _sample_clock(t0_perf):
     }
 
 
-def _calc_stats(values):
-    """
-    値列の基本統計量を返す。
-    """
-    if not values:
-        return {
-            "count": 0,
-            "minimum": None,
-            "maximum": None,
-            "average": None,
-            "stdev_population": None,
-        }
-
-    count = len(values)
-    average = sum(values) / float(count)
-    variance = sum((x - average) ** 2 for x in values) / float(count)
-    return {
-        "count": count,
-        "minimum": min(values),
-        "maximum": max(values),
-        "average": average,
-        "stdev_population": variance ** 0.5,
-    }
-
-
 def _configure_meas(scpi, kind, range_value="AUTO"):
     """
-    測定種別に応じて CONFigure を送る。
+    上位の測定種別名を SCPI の CONFigure 系コマンドへ写像する。
     """
     if kind == "voltage_dc":
         scpi.configure_voltage_dc(range_value)
@@ -124,16 +81,34 @@ def _configure_meas(scpi, kind, range_value="AUTO"):
         raise ValueError("未対応の測定種別である: {0!r}".format(kind))
 
 
+def _calc_stats(values):
+    """
+    サーバー側で取得した測定値リストから基本統計を計算する。
+    """
+    if not values:
+        return {
+            "count": 0,
+            "minimum": None,
+            "maximum": None,
+            "average": None,
+            "stdev_population": None,
+        }
+    count = len(values)
+    average = sum(values) / float(count)
+    variance = sum((x - average) ** 2 for x in values) / float(count)
+    return {
+        "count": count,
+        "minimum": min(values),
+        "maximum": max(values),
+        "average": average,
+        "stdev_population": math.sqrt(variance),
+    }
+
+
 class _Xdm1000Worker(object):
     """
-    子 process 側で SCPI 実行を担当する worker 実体である。
+    子プロセス側で SCPI 実行を担当する worker 実体である。
     """
-
-    DEFAULT_CONFIG = MeasurementConfig(
-        kind="voltage_dc",
-        range_value="AUTO",
-        rate="F",
-    )
 
     def __init__(
         self,
@@ -142,65 +117,40 @@ class _Xdm1000Worker(object):
         state,
         result_store,
         stop_event,
-        port=None,
-        timeout=2.0,
-        baudrate=115200,
+        port,
+        timeout,
+        baudrate,
         logger=None,
         log_level=None,
         config=None,
     ):
-        """
-        worker に必要な共有オブジェクトと接続情報を保持する。
-        """
-        self.command_q = command_q
-        self.response_q = response_q
-        self.state = state
-        self.result_store = result_store
-        self.stop_event = stop_event
-        self.config = config
+        if logger is None:
+            import logging
+
+            log_level = log_level or "INFO"
+            logging.basicConfig(level=log_level.upper())
+            logger = logging.getLogger(__name__)
+
+        self._logger = logger
+        self._config = config
 
         if config is not None:
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
-            if log_level is None:
-                log_level = getattr(config, "LOGGER_LEVEL", log_level)
 
-        if port is None:
-            raise ValueError("port が必要である。")
-
-        if logger is None and get_logger is not None:
-            logger_name = "xdm1000_worker"
-            if config is not None:
-                logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
-            try:
-                logger = get_logger(logger_name, level=log_level)
-            except TypeError:
-                logger = get_logger(logger_name)
-            except Exception:
-                logger = None
-
-        if logger is None:
-            level_value = getattr(logging, str(log_level or "INFO").upper(), logging.INFO)
-            logging.basicConfig(level=level_value)
-            logger = logging.getLogger("xdm1000_worker")
-
-        self.logger = logger
-        self.log_level = log_level
+        self.command_q = command_q
+        self.response_q = response_q
+        self.state = state
+        self.result_store = result_store
+        self.stop_event = stop_event
         self.port = port
         self.timeout = timeout
         self.baudrate = baudrate
-
         self.scpi = None
         self._current_config = None
 
     def set_idle(self, message="idle"):
-        """
-        共有 state を idle に戻す。
-        """
-        self.state["worker_alive"] = True
-        self.state["port"] = self.port
-        self.state["baudrate"] = self.baudrate
         self.state["running"] = False
         self.state["job_id"] = None
         self.state["job_type"] = None
@@ -209,11 +159,11 @@ class _Xdm1000Worker(object):
         self.state["error"] = None
         self.state["traceback"] = None
         self.state["message"] = message
+        self.state["worker_alive"] = True
+        self.state["port"] = self.port
+        self.state["baudrate"] = self.baudrate
 
     def set_running(self, job_id, job_type, args):
-        """
-        共有 state を running にする。
-        """
         self.state["running"] = True
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
@@ -222,53 +172,40 @@ class _Xdm1000Worker(object):
         self.state["error"] = None
         self.state["traceback"] = None
         self.state["message"] = "running"
-        self.state["args"] = dict(args)
+        self.state["meas_kind"] = args.get("kind")
+        self.state["range_value"] = args.get("range_value")
+        self.state["rate"] = args.get("rate")
 
-    def finish(self, message="done"):
-        """
-        正常終了を state へ反映する。
-        """
+    def finish(self, message="finished"):
         self.state["running"] = False
-        self.state["job_id"] = None
-        self.state["job_type"] = None
         self.state["finished_at"] = time.time()
         self.state["message"] = message
 
-    def fail(self, message, tb):
-        """
-        失敗状態を state へ反映する。
-        """
+    def fail(self, exc):
         self.state["running"] = False
         self.state["finished_at"] = time.time()
-        self.state["error"] = message
-        self.state["traceback"] = tb
+        self.state["error"] = repr(exc)
+        self.state["traceback"] = traceback.format_exc()
         self.state["message"] = "failed"
 
     def open(self):
-        """
-        SCPI 接続を開く。
-        """
         try:
             self.scpi = Xdm1000Scpi(
                 port=self.port,
                 timeout=self.timeout,
                 baudrate=self.baudrate,
-                logger=self.logger,
-                log_level=self.log_level,
-                config=self.config,
+                logger=self._logger,
+                config=self._config,
             )
             self.scpi.remote()
-            self.set_idle(message="worker_ready")
+            self.set_idle("worker_ready")
             self._current_config = None
             return True
-        except Exception:
-            self.fail("worker_open_failed", traceback.format_exc())
+        except BaseException as exc:
+            self.fail(exc)
             return False
 
     def close(self):
-        """
-        SCPI 接続を閉じる。
-        """
         try:
             if self.scpi is not None:
                 try:
@@ -296,16 +233,14 @@ class _Xdm1000Worker(object):
         )
 
     def _resolved_config(self, args):
-        """
-        None 引数を既存設定または既定値で補完する。
-        """
         kind = args.get("kind")
         range_value = args.get("range_value")
         rate = args.get("rate")
 
-        base = self._current_config
-        if base is None:
-            base = self.DEFAULT_CONFIG
+        if self._current_config is None:
+            base = MeasurementConfig("voltage_dc", "AUTO", "F")
+        else:
+            base = self._current_config
 
         if kind is None:
             kind = base.kind
@@ -314,12 +249,9 @@ class _Xdm1000Worker(object):
         if rate is None:
             rate = base.rate
 
-        return MeasurementConfig(kind=kind, range_value=range_value, rate=rate)
+        return MeasurementConfig(kind, range_value, rate)
 
     def _apply_config_if_needed(self, config):
-        """
-        必要なときだけ測定条件を装置へ反映する。
-        """
         if config.equals(self._current_config):
             return
 
@@ -340,9 +272,6 @@ class _Xdm1000Worker(object):
             self.scpi.set_rate(config.rate)
 
         self._current_config = config
-        self.state["meas_kind"] = config.kind
-        self.state["range_value"] = config.range_value
-        self.state["rate"] = config.rate
 
     def handle_idn(self, req_id):
         self.put_ok(req_id, self.scpi.idn())
@@ -355,7 +284,14 @@ class _Xdm1000Worker(object):
     def handle_set_meas_mode(self, req_id, args):
         config = self._resolved_config(args)
         self._apply_config_if_needed(config)
-        self.put_ok(req_id, config.to_dict())
+        self.put_ok(
+            req_id,
+            {
+                "kind": config.kind,
+                "range_value": config.range_value,
+                "rate": config.rate,
+            },
+        )
 
     def handle_one_shot(self, req_id, args):
         config = self._resolved_config(args)
@@ -388,11 +324,6 @@ class _Xdm1000Worker(object):
         duration = float(args["duration"])
         interval = float(args.get("interval", 0.0))
         settle = float(args.get("settle", 0.0))
-
-        if duration <= 0.0:
-            raise ValueError("duration は正の値でなければならない。")
-        if interval < 0.0:
-            raise ValueError("interval は 0 以上でなければならない。")
 
         config = self._resolved_config(args)
         self._apply_config_if_needed(config)
@@ -437,30 +368,35 @@ class _Xdm1000Worker(object):
 
             result = {
                 "job_id": job_id,
+                "ok": True,
+                "stopped": self.stop_event.is_set(),
                 "kind": config.kind,
                 "range_value": config.range_value,
                 "rate": config.rate,
-                "duration": duration,
-                "interval": interval,
-                "requested_stop": bool(self.stop_event.is_set()),
-                "host_time_start": started_at,
-                "host_time_end": time.time(),
-                "count": len(samples),
+                "duration_requested": duration,
+                "stats": _calc_stats([float(x["value"]) for x in samples]),
+                "started_at": started_at,
+                "finished_at": time.time(),
                 "samples": samples,
             }
-            result.update(_calc_stats([float(x["value"]) for x in samples]))
             self.result_store["continuous"] = result
-            self.finish("continuous_done")
-        except Exception:
-            self.fail("continuous_failed", traceback.format_exc())
+            if self.stop_event.is_set():
+                self.finish("stopped")
+            else:
+                self.finish("finished")
+        except BaseException as exc:
+            self.result_store["continuous"] = {
+                "job_id": job_id,
+                "ok": False,
+                "error": repr(exc),
+                "traceback": traceback.format_exc(),
+            }
+            self.fail(exc)
 
     def handle_start_statistics(self, req_id, args):
         job_id = args["job_id"]
         duration = float(args["duration"])
         settle = float(args.get("settle", 0.0))
-
-        if duration <= 0.0:
-            raise ValueError("duration は正の値でなければならない。")
 
         config = self._resolved_config(args)
         self._apply_config_if_needed(config)
@@ -477,40 +413,62 @@ class _Xdm1000Worker(object):
         values = []
 
         try:
+            self.scpi.set_calc_function_average()
             while True:
                 now = time.time()
                 if now >= deadline:
                     break
                 if self.stop_event.is_set():
                     break
-                values.append(self.scpi.meas_main())
+                values.append(float(self.scpi.meas_main()))
 
-            result = {
+            stats = self.scpi.get_average_all()
+            self.result_store["statistics"] = {
                 "job_id": job_id,
+                "ok": True,
+                "stopped": self.stop_event.is_set(),
                 "kind": config.kind,
                 "range_value": config.range_value,
                 "rate": config.rate,
-                "duration": duration,
-                "requested_stop": bool(self.stop_event.is_set()),
-                "host_time_start": started_at,
-                "host_time_end": time.time(),
+                "duration_requested": duration,
+                "stats": {
+                    "minimum": stats.minimum,
+                    "maximum": stats.maximum,
+                    "average": stats.average,
+                    "count": stats.count,
+                },
+                "note": (
+                    "CALCulate:AVERage:ALL? を使った statistics テスト結果である。"
+                    "statistics の clear/start 条件が未確認のため、"
+                    "この値を duration 秒の厳密な平均とは扱わない。"
+                ),
+                "started_at": started_at,
+                "finished_at": time.time(),
                 "values": values,
             }
-            result.update(_calc_stats(values))
-            self.result_store["statistics"] = result
-            self.finish("statistics_done")
-        except Exception:
-            self.fail("statistics_failed", traceback.format_exc())
+            if self.stop_event.is_set():
+                self.finish("stopped")
+            else:
+                self.finish("finished")
+        except BaseException as exc:
+            self.result_store["statistics"] = {
+                "job_id": job_id,
+                "ok": False,
+                "error": repr(exc),
+                "traceback": traceback.format_exc(),
+            }
+            self.fail(exc)
 
     def handle_command(self, command):
-        req_id = command["req_id"]
-        name = command["cmd"]
-        args = command.get("args", {}) or {}
+        req_id = command.get("req_id")
+        name = command.get("cmd")
+        args = command.get("args", {})
 
         try:
             if name == "shutdown":
-                self.put_ok(req_id, {"message": "shutdown"})
+                self.put_ok(req_id, None)
                 return False
+
             if name == "idn":
                 self.handle_idn(req_id)
             elif name == "reset":
@@ -524,9 +482,10 @@ class _Xdm1000Worker(object):
             elif name == "start_statistics":
                 self.handle_start_statistics(req_id, args)
             else:
-                raise ValueError("未対応の worker command である: {0!r}".format(name))
+                raise ValueError("未知の worker command である: {0!r}".format(name))
         except BaseException as exc:
             self.put_error(req_id, exc)
+
         return True
 
     def run(self):
@@ -539,15 +498,10 @@ class _Xdm1000Worker(object):
                     command = self.command_q.get()
                     if not self.handle_command(command):
                         break
-                except (KeyboardInterrupt, EOFError, BrokenPipeError):
-                    break
                 except BaseException:
                     try:
                         self.state["worker_loop_error"] = traceback.format_exc()
                     except Exception:
                         pass
         finally:
-            try:
-                self.close()
-            except Exception:
-                pass
+            self.close()
