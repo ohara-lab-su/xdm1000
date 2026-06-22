@@ -11,17 +11,14 @@ OWON XDM1000 / XDM1241 用の低レベル SCPI ラッパである。
 * 低レベルの SCPI 送受信だけを行う。
 * コンストラクタ引数だけでも動作する。
 * config オブジェクトが与えられた場合は config 側を優先する。
-* x_logger を優先して logger を作る。
+* logger の初期化は cobotta_ctrl の流儀に揃える。
 * with 構文の利用は前提にしない。
 * Python 3.6 以下互換の文法だけを使う。
 """
 
+import logging
+import time
 import serial
-
-try:
-    from x_logger import get_logger
-except Exception:
-    get_logger = None
 
 
 class AverageStats(object):
@@ -76,46 +73,50 @@ class Xdm1000Scpi(object):
         config が与えられた場合は PORT, TIMEOUT, BAUDRATE, LOGGER_LEVEL を
         config 側から優先して読む。
         """
-        self.config = config
+        if logger is None:
+            log_level = log_level or "INFO"
+            logging.basicConfig(level=log_level.upper())
+            logger = logging.getLogger(__name__)
+
+        self._logger = logger
+        self._config = config
 
         if config is not None:
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
-            if log_level is None:
-                log_level = getattr(config, "LOGGER_LEVEL", log_level)
 
         if port is None:
             raise ValueError("port が必要である。")
 
-        self.port = port
-        self.timeout = timeout
-        self.baudrate = baudrate
-        self.log_level = log_level
+        # pyserial.Serial() の型警告を避けるため、
+        # 呼び出し直前で引数型を明示しておく。
+        self._port = str(port)
+        self._timeout = float(timeout)
+        self._baudrate = int(baudrate)
 
-        if logger is None and get_logger is not None:
-            logger_name = "xdm1000_scpi"
-            if config is not None:
-                logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
-            try:
-                logger = get_logger(logger_name, level=log_level)
-            except TypeError:
-                logger = get_logger(logger_name)
-            except Exception:
-                logger = None
-        self.logger = logger
+        serial_port = self._port
+        serial_baudrate = int(self._baudrate)
+        serial_bytesize = int(serial.EIGHTBITS)
+        serial_parity = str(serial.PARITY_NONE)
+        serial_stopbits = int(serial.STOPBITS_ONE)
+        serial_timeout = float(self._timeout)
+        serial_write_timeout = float(self._timeout)
+        serial_xonxoff = False
+        serial_rtscts = False
+        serial_dsrdtr = False
 
         self.ser = serial.Serial(
-            port=port,
-            baudrate=baudrate,
-            bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            timeout=timeout,
-            write_timeout=timeout,
-            xonxoff=False,
-            rtscts=False,
-            dsrdtr=False,
+            port=serial_port,
+            baudrate=serial_baudrate,
+            bytesize=serial_bytesize,
+            parity=serial_parity,
+            stopbits=serial_stopbits,
+            timeout=serial_timeout,
+            write_timeout=serial_write_timeout,
+            xonxoff=serial_xonxoff,
+            rtscts=serial_rtscts,
+            dsrdtr=serial_dsrdtr,
         )
 
     def close(
@@ -159,11 +160,10 @@ class Xdm1000Scpi(object):
         """
         if not command.endswith("\n"):
             command += "\n"
-        if self.logger is not None:
-            try:
-                self.logger.debug("SCPI WRITE: %s", command.rstrip())
-            except Exception:
-                pass
+        try:
+            self._logger.debug("SCPI WRITE: %s", command.rstrip())
+        except Exception:
+            pass
         self.ser.write(command.encode("ascii"))
         self.ser.flush()
 
@@ -177,11 +177,10 @@ class Xdm1000Scpi(object):
         if not raw:
             raise TimeoutError("SCPI 応答 timeout")
         text = raw.decode("ascii", errors="replace").strip()
-        if self.logger is not None:
-            try:
-                self.logger.debug("SCPI READ : %s", text)
-            except Exception:
-                pass
+        try:
+            self._logger.debug("SCPI READ : %s", text)
+        except Exception:
+            pass
         return text
 
     def query(
@@ -189,21 +188,17 @@ class Xdm1000Scpi(object):
         command,
     ):
         """
-        SCPI query を送信し、1 行応答を返す。
+        query を 1 回実行する。
         """
-        self.ser.reset_input_buffer()
         self.write(command)
-        response = self.read_line()
-        if response == "":
-            raise TimeoutError("no response from XDM1000: {0}".format(command))
-        return response
+        return self.read_line()
 
     def query_float(
         self,
         command,
     ):
         """
-        SCPI query 応答を float として返す。
+        浮動小数応答を返す。
         """
         return float(self.query(command))
 
@@ -212,7 +207,7 @@ class Xdm1000Scpi(object):
         command,
     ):
         """
-        SCPI query 応答を int として返す。
+        整数応答を返す。
         """
         return int(float(self.query(command)))
 
@@ -236,7 +231,7 @@ class Xdm1000Scpi(object):
         self,
     ):
         """
-        remote mode へ切り替える。
+        remote へ切り替える。
         """
         self.write("SYSTem:REMote")
 
@@ -244,9 +239,29 @@ class Xdm1000Scpi(object):
         self,
     ):
         """
-        local mode へ戻す。
+        local へ戻す。
         """
         self.write("SYSTem:LOCal")
+
+    def set_beeper(
+        self,
+        enabled,
+    ):
+        """
+        ブザーの ON/OFF を設定する。
+        """
+        if enabled:
+            self.write("SYSTem:BEEPer:STATe ON")
+        else:
+            self.write("SYSTem:BEEPer:STATe OFF")
+
+    def get_beeper(
+        self,
+    ):
+        """
+        ブザー状態を取得する。
+        """
+        return self.query_int("SYSTem:BEEPer:STATe?") != 0
 
     def configure_voltage_dc(
         self,
@@ -315,12 +330,36 @@ class Xdm1000Scpi(object):
     ):
         self.write("CONFigure:CONTinuity")
 
+    def set_calc_function_average(
+        self,
+    ):
+        self.write("CALCulate:FUNCtion AVERage")
+
+    def get_average_all(
+        self,
+    ):
+        """
+        CALCulate:AVERage:ALL? を取得する。
+        """
+        raw = self.query("CALCulate:AVERage:ALL?")
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) != 4:
+            raise ValueError(
+                "unexpected CALCulate:AVERage:ALL? response: {0}".format(raw)
+            )
+        return AverageStats(
+            minimum=float(parts[0]),
+            maximum=float(parts[1]),
+            average=float(parts[2]),
+            count=int(float(parts[3])),
+        )
+
     def set_rate(
         self,
         speed,
     ):
         """
-        RATE を設定する。
+        測定速度を設定する。
         """
         self.write("RATE {0}".format(speed))
 
@@ -328,7 +367,7 @@ class Xdm1000Scpi(object):
         self,
     ):
         """
-        RATE? を返す。
+        測定速度を取得する。
         """
         return self.query("RATE?")
 
@@ -358,7 +397,7 @@ class Xdm1000Scpi(object):
         self,
     ):
         """
-        MEAS1? を返す。
+        MEAS1? により主表示の測定値を取得する。
         """
         return self.query_float("MEAS1?")
 
@@ -366,65 +405,41 @@ class Xdm1000Scpi(object):
         self,
     ):
         """
-        MEAS2? を返す。
+        MEAS2? により副表示の測定値を取得する。
         """
         return self.query_float("MEAS2?")
 
-    def set_calc_function_average(
-        self,
-    ):
-        """
-        CALCulate:FUNCtion AVERage を設定する。
-        """
-        self.write("CALCulate:FUNCtion AVERage")
 
-    def calc_average_all(
-        self,
-    ):
-        """
-        CALCulate:AVERage:ALL? を解釈して返す。
-        """
-        raw = self.query("CALCulate:AVERage:ALL?")
-        parts = [p.strip() for p in raw.split(",")]
-        if len(parts) != 4:
-            raise ValueError(
-                "unexpected CALCulate:AVERage:ALL? response: {0}".format(raw)
-            )
-        return AverageStats(
-            minimum=float(parts[0]),
-            maximum=float(parts[1]),
-            average=float(parts[2]),
-            count=int(float(parts[3])),
-        )
-
-
-def main():
+def main(
+    config_path="xdm1000_example.yml",
+):
     """
-    低レベル SCPI 動作確認用の簡易サンプルである。
-    引数は使わず、この関数内の設定だけで動かす。
+    SCPI 単独動作確認用サンプルである。
     """
+    from xdm1000.config import Config
+
+    config = None
     try:
-        from xdm1000.config import Config
-        cfg = Config()
+        config = Config(config_path)
     except Exception:
-        cfg = None
-
-    port = "/dev/cu.usbserial-10"
-    timeout = 2.0
-    baudrate = 115200
+        config = None
 
     dmm = Xdm1000Scpi(
-        port=port,
-        timeout=timeout,
-        baudrate=baudrate,
-        config=cfg,
+        port="/dev/cu.usbserial-10",
+        timeout=2.0,
+        baudrate=115200,
+        config=config,
     )
 
     try:
         print("IDN:", dmm.idn())
         dmm.configure_voltage_dc("AUTO")
         dmm.set_rate("F")
-        print("MEAS1:", dmm.meas_main())
+        time.sleep(0.2)
+
+        for _ in range(10):
+            print(dmm.meas_main())
+            time.sleep(0.2)
     finally:
         dmm.close()
 
