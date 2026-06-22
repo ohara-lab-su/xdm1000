@@ -21,36 +21,6 @@ XDM1041 / XDM2041 用として公開されている XDM1000 Series Programming M
 import time
 import serial
 
-try:
-    from x_logger import get_logger
-except Exception:
-    get_logger = None
-
-
-def _resolve_logger(
-    logger=None,
-    logger_name=None,
-    log_level=None,
-):
-    """logger を解決する。"""
-    if logger is not None:
-        return logger
-
-    if get_logger is not None:
-        resolved_name = logger_name or "xdm1000_scpi"
-        try:
-            return get_logger(resolved_name, level=log_level)
-        except TypeError:
-            return get_logger(resolved_name)
-        except Exception:
-            pass
-
-    import logging
-
-    resolved_level = log_level or "INFO"
-    logging.basicConfig(level=resolved_level.upper())
-    return logging.getLogger(logger_name or __name__)
-
 
 class AverageStats(object):
     """CALCulate:AVERage:ALL? の結果を保持するクラスである。"""
@@ -86,16 +56,19 @@ class Xdm1000Scpi(object):
             port = getattr(config, "PORT", port)
             timeout = getattr(config, "TIMEOUT", timeout)
             baudrate = getattr(config, "BAUDRATE", baudrate)
-            if logger_name is None:
-                logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
+
+            # if logger_name is None:
+            #     logger_name = getattr(config, "SERVER_LOGGER_NAME", logger_name)
             if log_level is None:
                 log_level = getattr(config, "LOGGER_LEVEL", log_level)
 
-        self._logger = _resolve_logger(
-            logger=logger,
-            logger_name=logger_name,
-            log_level=log_level,
-        )
+        if logger is None:
+            import logging
+
+            resolved_level = log_level or "INFO"
+            logging.basicConfig(level=resolved_level.upper())
+
+        self._logger = logger
         self._config = config
 
         if port is None:
@@ -366,6 +339,7 @@ def main():
     """DC 電圧を 10 回読む最小サンプルである。"""
     try:
         from xdm1000.config import Config
+
         config = Config()
     except Exception:
         config = None

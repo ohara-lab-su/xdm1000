@@ -68,31 +68,6 @@ class MeasurementConfig(object):
         }
 
 
-def _resolve_logger(
-    logger=None,
-    logger_name=None,
-    log_level=None,
-):
-    """logger を解決する。"""
-    if logger is not None:
-        return logger
-
-    if get_logger is not None:
-        resolved_name = logger_name or "xdm1000_worker"
-        try:
-            return get_logger(resolved_name, level=log_level)
-        except TypeError:
-            return get_logger(resolved_name)
-        except Exception:
-            pass
-
-    import logging
-
-    resolved_level = log_level or "INFO"
-    logging.basicConfig(level=resolved_level.upper())
-    return logging.getLogger(logger_name or __name__)
-
-
 def _sample_clock(
     t0_perf,
 ):
@@ -178,18 +153,19 @@ class _Xdm1000Worker(object):
         timeout,
         baudrate,
         logger=None,
-        logger_name=None,
         log_level=None,
         config=None,
     ):
         """worker に必要な共有オブジェクトと接続情報を保持する。"""
-        self.logger_name = logger_name
         self.log_level = log_level
-        self.logger = _resolve_logger(
-            logger=logger,
-            logger_name=self.logger_name,
-            log_level=self.log_level,
-        )
+        if logger is None:
+            import logging
+
+            log_level = log_level or "INFO"
+            logging.basicConfig(level=log_level.upper())
+            logger = logging.getLogger(__name__)
+
+        self.logger = logger
         self.config = config
 
         if self.config is not None:
