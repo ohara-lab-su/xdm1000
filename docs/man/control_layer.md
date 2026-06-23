@@ -1,438 +1,101 @@
 # 上位制御層 (xdm1000_ctrl.py)
 
-上位制御層は
-SCPI のラッパ
-ではない。
+`xdm1000_ctrl.py` は、XDM1000/XDM1241 を測定器として扱う上位制御クラスを提供する。SCPI 低レベル API をそのまま公開する層ではない。
 
-測定器として自然な API を提供することを目的とする。
-利用者は
-MEAS1?
-CONFigure
-SENSe
-CALCulate
-などを意識しない。
-
----
-
-## 責務
-
-ctrl 層が担当するもの
-
-- 測定モード設定
-- 1shot 測定
-- continuous 測定
-- statistics mode
-- running 管理
-- state 管理
-- result 管理
-- stop
-- close
-
-担当しないもの
-
-- raw SCPI
-- remote/local
-- query()
-
-これらは SCPI 層だけが提供する。
-
-## プロセスモデル
-
-この部分が `xdm1000_ctrl.py` の中核となる設計である。
-本ライブラリでは Python の `threading` は使用しない。
-長時間測定は `multiprocessing.Process` を使用する。
-理由は次の通りである。
-
-- Python スレッドは GIL の影響を受ける。
-- 長時間 Blocking I/O を安全に分離したい。
-- 測定処理を API ハンドラから完全に独立させたい。
-- 将来 FastAPI・gRPC・ローカル利用のいずれでも同一設計を維持したい。
-
----
-
-## 全体構成
+## 公開される主な API
 
 ```text
-                   ctrl API
-        meas_one_shot()
-start_continuous_meas()
- start_statistics_mode()
-           │
-           ▼
-     Parent Process
-──────────────────────────────
-
-running
-state
-result
-command queue
-response queue
-stop event
-           │
-           ▼
-──────────────────────────────
-      Worker Process
-    XDM1000SCPI
-    Serial Port
-    SCPI Execute
+close()
+disconnect()
+get_state()
+is_running()
+stop_job()
+get_continuous_result(clear=False)
+get_statistics_result(clear=False)
+idn()
+set_meas_mode(kind, range_value="AUTO", rate="F")
+meas_one_shot(kind=None, range_value=None, rate=None, settle=0.0)
+meas(kind=None, range_value=None, rate=None, settle=0.0)
+meas_voltage_dc(range_value=None, rate=None, settle=0.0)
+meas_current_dc(range_value=None, rate=None, settle=0.0)
+start_continuous_meas(kind=None, duration=0.0, range_value=None, rate=None, interval=0.0, settle=0.0)
+start_statistics_mode(kind=None, duration=0.0, range_value=None, rate=None, settle=0.0)
+wait_until_done(poll_interval=0.2)
 ```
 
-worker process のみがシリアルポートを保持する。
-親プロセスはシリアルポートへ直接アクセスしない。
+`remote()`、`local()`、`query()`、`write()` は公開しない。
 
----
+## use_process=True
 
-## Parent Process
-
-親プロセスは API を公開する側である。
-
-責務
-
-- API 呼び出し受付
-- running 管理
-- state 管理
-- result 管理
-- command queue 管理
-- response queue 管理
-- stop event 管理
-
-親プロセスは
+`use_process=True` では、親プロセスが API を受け、子プロセスである worker が SCPI 通信を担当する。
 
 ```text
-query()
-write()
-MEAS?
+Xdm1000Ctrl
+├── Parent Process
+│   ├── command_q
+│   ├── response_q
+│   ├── Manager().dict() state
+│   ├── Manager().dict() result_store
+│   ├── Event stop_event
+│   └── Lock rpc_lock
+└── Worker Process
+    └── _Xdm1000Worker
+        └── Xdm1000Scpi
+            └── serial.Serial
 ```
 
-などの SCPI を直接実行しない。
+worker process のみがシリアルポートを保持する。親プロセスは SCPI を直接実行しない。
 
----
+## use_process=False
 
-## Worker Process
+`use_process=False` では、`Xdm1000Ctrl` 自身が `Xdm1000Scpi` を生成する。`start_continuous_meas()` と `start_statistics_mode()` は同じ API 名だが、バックグラウンド化されず、呼び出し元でブロッキング実行される。
 
-Worker Process は
-SCPI を実行する唯一のプロセスである。
+## running 中の制約
 
-責務
+`idn()`、`set_meas_mode()`、`meas_one_shot()`、`meas()`、`meas_voltage_dc()`、`meas_current_dc()`、`start_continuous_meas()`、`start_statistics_mode()` は running 中に実行できない。running 中に呼ぶと `DeviceBusyError` が送出される。
 
-- XDM1000SCPI の生成
-- open()
-- close()
-- シリアル保持
-- SCPI 実行
-- 測定実行
-- statistics 実行
-- continuous 実行
-- result 保存
-- state 更新
-
----
-
-## command queue
-
-```text
-Parent Process
-↓
-Worker Process
-```
-
-へ命令を送る。
-
-対象
-
-- idn
-- reset
-- set_meas_mode
-- meas_one_shot
-- start_continuous_meas
-- start_statistics_mode
-- shutdown
-
-command queue は
-短時間コマンド
-だけを対象とする。
-
----
-
-## response queue
-
-```text
-Worker Process
-↓
-Parent Process
-```
-
-へ応答を返す。
-
-通常コマンドでは
-
-```text
-command queue
-↓
-Worker
-↓
-response queue
-```
-
-という流れになる。
-
----
+`get_state()`、`is_running()`、`stop_job()`、`get_continuous_result()`、`get_statistics_result()` は running 中でも呼べる。
 
 ## state
 
-state は共有状態である。
-少なくとも次を保持する。
+`get_state()` は現在状態を dict として返す。`use_process=True` では共有 dict に `process_alive` を追加して返す。`use_process=False` では direct 用状態に `process_alive=False` を追加して返す。
+
+主なキーは次である。
 
 ```text
+worker_alive
+process_alive
+port
+baudrate
 running
-job_type
 job_id
-meas_mode
-range
-rate
-started_time
-finished_time
-sample_count
-last_value
-message
+job_type
+started_at
+finished_at
 error
+traceback
+message
+args
 ```
 
-state は queue を経由せず取得できる。
-そのため
+## stop
 
-```
-get_state()
-```
+`stop_job()` は command queue を使わない。`use_process=True` では `stop_event` を set する。`use_process=False` では direct 用の停止要求フラグを立てる。実際の停止は測定ループが次に停止要求を確認した時点で行われる。
 
-は長時間測定中でも即座に返る。
+## continuous 測定
 
----
+`start_continuous_meas()` は `duration` 秒の間 `MEAS1?` を繰り返す。`interval` が 0 より大きい場合は、サンプル間の最低間隔として扱う。`duration <= 0` または `interval < 0` は `ValueError` である。
 
-## result
+`use_process=True` では開始成功時に `{"job_id": ...}` を返し、結果は `result_store["continuous"]` に保存される。
 
-測定終了後の結果を保存する。
+## statistics mode
 
-```text
-continuous
-statistics
-```
+`start_statistics_mode()` は `duration` 秒の統計測定を行う。`duration <= 0` は `ValueError` である。
 
-それぞれ専用の結果を保持する。
-Parent Process は
-測定終了後に
+`use_process=True` では、worker が `CALCulate:FUNCtion AVERage` を設定し、指定時間中に `MEAS1?` を読みつつ、最後に `CALCulate:AVERage:ALL?` を取得して `stats` に保存する。
 
-```
-get_result()
-```
+`use_process=False` では、Python 側で `MEAS1?` の値列から `minimum`、`maximum`、`average`、`count` を計算する。
 
-で取得する。
+## 結果取得
 
----
-
-## stop event
-
-停止要求は
-command queue
-では行わない。
-Parent Process が
-
-```
-stop_event.set()
-```
-
-を行う。
-Worker Process は
-測定ループ中に
-一定周期で
-
-```
-stop_event.is_set()
-```
-
-を確認する。
-停止要求があれば
-安全に測定を終了する。
-
----
-
-## running の扱い
-
-running は
-長時間ジョブ実行中かどうか
-を示す。
-
-running=True の間は
-測定器は占有状態である。
-
----
-
-## running 中に許可する API
-
-- get_state()
-- is_running()
-- stop_job()
-- get_result()
-
-これらは
-
-Worker Process を停止させない。
-
----
-
-## running 中に禁止する API
-
-- meas_one_shot()
-- set_meas_mode()
-- start_continuous_meas()
-- start_statistics_mode()
-- reset()
-
-これらは
-
-command queue に積まない。
-
-Parent Process が
-
-```
-DeviceBusyError
-```
-
-を返す。
-これにより
-Worker Process は
-測定処理だけに集中できる。
-
----
-
-## 状態遷移
-
-```text
-Idle
-↓
-Running
-↓
-Finished
-
-```
-
-正常終了時は
-Finished
-になる。
-
----
-
-```text
-Idle
-↓
-Running
-↓
-Stopped
-
-```
-
-stop_job()
-により停止した場合は
-Stopped
-となる。
-
----
-
-```text
-Idle
-↓
-Running
-↓
-Error
-
-```
-
-例外が発生した場合は
-Error
-になる。
-Error 時には
-error メッセージを state に保持する。
-
----
-
-## 測定モード
-
-ctrl 層では
-測定モードを
-次の3種類に限定する。
-
----
-
-## one shot
-
-1回だけ測定する。
-
-使用する SCPI
-
-```
-CONFigure
-SENSe
-MEAS1?
-```
-
-戻り値
-
-```text
-value
-host_time_start
-host_time_end
-elapsed
-```
-
----
-
-## continuous
-
-指定時間
-MEAS1?
-を繰り返し取得する。
-各サンプルは
-
-```text
-index
-value
-host_time_start
-host_time_end
-elapsed
-```
-
-を保持する。
-測定終了後
-まとめて取得する。
-
----
-
-## statistics
-
-SCPI の
-
-```
-CALCulate
-```
-
-機能を利用する。
-現在は
-Statistics 機能の評価用であり
-時間平均 API としては扱わない。
-使用する SCPI
-
-```
-CALCulate:FUNCtion
-CALCulate:AVERage:ALL?
-```
-
-戻り値
-
-```
-minimum
-maximum
-average
-count
-```
-
-である。
+`get_continuous_result(clear=False)` と `get_statistics_result(clear=False)` は保存済み結果を返す。`clear=True` の場合、取得後に該当結果を消す。

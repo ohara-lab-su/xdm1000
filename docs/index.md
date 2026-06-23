@@ -1,5 +1,6 @@
-# OWON XDM1000/XDM1241 制御ライブラリ
-view on [github](https://github.com/ohara-lab-su/xdm1000) / [ohara-lab-su (doc)](https://ohara-lab-su.github.io/)
+# XDM1000 / XDM1241 制御ドキュメント
+
+OWON XDM1000/XDM1241 系デジタルマルチメータ用の SCPI ドライバ、上位制御クラス、multiprocessing ワーカー、FastAPI/ese774_frame 透過サーバー構成のドキュメントである。
 
 ---
 ```{toctree}
@@ -18,32 +19,26 @@ man/implementation_notes
 ```
 ---
 
-OWON XDM1000/XDM1241 用制御ライブラリおよび FastAPI サーバー構成のドキュメントである。
-
 ## 構成
 
-- [システム構成](architecture.md)
-- [FastAPI 公開レイヤ](fastapi_layer.md)
-- [設計方針](design_policy.md)
-- [SCPI 採用方針](scpi_policy.md)
-- [SCPI ドライバ層の概要](scpi_layer_overview.md)
-- [上位制御層](control_layer.md)
-- [SCPI ドライバ API リファレンス](scpi_api_reference.md)
-- [ctrl API リファレンス](ctrl_api_reference.md)
-- [実装時の注意](implementation_notes.md)
+- [システム構成](man/architecture.md)
+- [設計方針](man/design_policy.md)
+- [SCPI ドライバ層の概要](man/scpi_layer_overview.md)
+- [SCPI 採用方針](man/scpi_policy.md)
+- [上位制御層](man/control_layer.md)
+- [FastAPI 公開レイヤ](man/fastapi_layer.md)
+- [SCPI ドライバ API リファレンス](man/scpi_api_reference.md)
+- [ctrl API リファレンス](man/ctrl_api_reference.md)
+- [実装上の注意事項](man/implementation_notes.md)
 
 ## 推奨読順
 
 1. `architecture.md`
 2. `design_policy.md`
-3. `scpi_policy.md`
-4. `control_layer.md`
-5. `scpi_api_reference.md`
-6. `ctrl_api_reference.md`
-7. `fastapi_layer.md`
-8. `implementation_notes.md`
-
-
----
-## 作者
-- Kengo NAKADA
+3. `scpi_layer_overview.md`
+4. `scpi_policy.md`
+5. `control_layer.md`
+6. `fastapi_layer.md`
+7. `scpi_api_reference.md`
+8. `ctrl_api_reference.md`
+9. `implementation_notes.md`
