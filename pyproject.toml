@@ -57,6 +57,7 @@ dependencies = [
 #"grpcio-tools",
 #"google",
 #"pygame",
+    "pyserial",
 ]
 
 [tool.pytest.ini_options]
