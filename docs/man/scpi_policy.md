@@ -1,41 +1,4 @@
-
-# xdm1000 FastAPI server module
-
-OWON XDM1000/XDM1241 用の制御ライブラリ、および `ese774_frame` 透過サーバー構成である。
-
-本ファイルは統合版 README の Part 1 である。
-
-- `xdm1000_scpi.py`
-  - SCPI を低レベル API として提供する。
-  - SCPI コマンドは削らない。
-  - `remote()` / `local()` はこの層のみ。
-
-- `xdm1000_ctrl.py`
-  - 測定器として扱う上位制御層。
-  - SCPI を隠蔽する。
-  - `remote()` / `local()` は公開しない。
-
-## 構成
-
-```text
-project_root/
-├── src/
-│   └── xdm1000/
-│       ├── xdm1000_scpi.py
-│       ├── xdm1000_ctrl.py
-│       └── server_fastapi/
-└── examples/
-```
-
-## 設計目的
-
-- ローカル制御クラスとして設計する。
-- FastAPI や ese774_frame には依存しない。
-- サーバープロセスで実体化されることを前提とする。
-- 長時間測定は multiprocessing.Process を使用する。
-- 測定中は running 状態を保持する。
-
-## SCPI 採用方針
+# SCPI 採用方針
 
 SCPI ドライバ層では、Programming Manual に記載されている SCPI コマンドを可能な限りそのまま公開する。
 
@@ -49,7 +12,7 @@ SCPI は削らない。
 
 ---
 
-### CONFigure
+## CONFigure
 
 CONFigure 系コマンドは測定モードの切り替えを行う。
 
@@ -84,7 +47,7 @@ set_meas_mode(
 
 ---
 
-### SENSe
+## SENSe
 
 SENSe 系では測定条件を設定する。
 
@@ -125,7 +88,7 @@ MEAS2?
 
 ---
 
-### MEAS?
+## MEAS?
 
 汎用測定値取得コマンドである。
 現在の表示状態に応じた測定値を返す。
@@ -141,7 +104,7 @@ meas()
 
 ---
 
-### MEAS1?
+## MEAS1?
 
 メイン表示値取得である。
 ctrl 層では
@@ -159,7 +122,7 @@ continuous
 
 ---
 
-### MEAS2?
+## MEAS2?
 
 サブ表示取得である。
 
@@ -205,3 +168,5 @@ ctrl 層では
 Statistics Mode
 というテスト機能として実装する。
 時間窓平均としては扱わない。
+
+---
