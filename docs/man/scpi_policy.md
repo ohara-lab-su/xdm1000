@@ -1,172 +1,69 @@
 # SCPI 採用方針
 
-SCPI ドライバ層では、Programming Manual に記載されている SCPI コマンドを可能な限りそのまま公開する。
-
-上位制御層では、SCPI の存在を利用者に意識させない API を提供する。
-
-上位層では測定器として自然な API を提供することを目的とし、SCPI コマンド体系は隠蔽する。
-
-SCPI は削らない。
-
-上位層で現在利用しない SCPI コマンドであっても、低レベル API として実装する。
-
----
+SCPI ドライバ層では、低レベル操作を明示的な Python メソッドとして提供する。上位制御層では SCPI コマンド名を利用者に意識させず、測定器として自然な API に集約する。
 
 ## CONFigure
 
-CONFigure 系コマンドは測定モードの切り替えを行う。
+`CONFigure:*` 系コマンドは、SCPI 層では個別メソッドとして提供する。
 
-代表例
-
-- CONFigure:VOLTage:DC
-- CONFigure:VOLTage:AC
-- CONFigure:CURRent:DC
-- CONFigure:CURRent:AC
-- CONFigure:RESistance
-- CONFigure:FRESistance
-- CONFigure:FREQuency
-- CONFigure:PERiod
-- CONFigure:CAPacitance
-- CONFigure:TEMPerature:RTD
-- CONFigure:DIODe
-- CONFigure:CONTinuity
-
-SCPI 層では個別メソッドとして提供する。
-
-ctrl 層では
-
-```python
-set_meas_mode(
-    kind="voltage_dc",
-    range_value="AUTO",
-    rate="F",
-)
+```text
+configure_voltage_dc(range_value="AUTO")
+configure_voltage_ac(range_value="AUTO")
+configure_current_dc(range_value="AUTO")
+configure_current_ac(range_value="AUTO")
+configure_resistance(range_value="AUTO")
+configure_fresistance(range_value="AUTO")
+configure_frequency()
+configure_period()
+configure_capacitance(range_value="AUTO")
+configure_temperature_rtd()
+configure_diode()
+configure_continuity()
 ```
 
-へ集約する。
+ctrl 層ではこれらを `set_meas_mode(kind, range_value, rate)` に集約する。
 
----
+## kind の対応
 
-## SENSe
+ctrl 層の `kind` は次の意味名である。
 
-SENSe 系では測定条件を設定する。
-
-代表的なものは
-
-- Rate
-- Range
-- Auto Range
-- Null
-- dB
-- dBm
-
-である。
-
-Rate は
-
-- F
-- M
-- S
-
-の3段階であり、
-これは装置内部の測定速度であって、
-continuous 測定で指定する polling interval とは意味が異なる。
-
----
-
-## MEAS 系コマンド
-
-Programming Manual では測定値取得として少なくとも次が提供される。
-
-```
-MEAS?
-MEAS1?
-MEAS2?
+```text
+voltage_dc       -> CONFigure:VOLTage:DC
+voltage_ac       -> CONFigure:VOLTage:AC
+current_dc       -> CONFigure:CURRent:DC
+current_ac       -> CONFigure:CURRent:AC
+resistance       -> CONFigure:RESistance
+fresistance      -> CONFigure:FRESistance
+frequency        -> CONFigure:FREQuency
+period           -> CONFigure:PERiod
+capacitance      -> CONFigure:CAPacitance
+temperature_rtd  -> CONFigure:TEMPerature:RTD
+diode            -> CONFigure:DIODe
+continuity       -> CONFigure:CONTinuity
 ```
 
-これらは用途が異なる。
+## RATE
 
----
+SCPI 層では `set_rate(speed)` が `RATE {speed}` を送信する。値の正規化や検証は行わない。ctrl 層では `rate` 引数として上位 API から渡す。
 
 ## MEAS?
 
-汎用測定値取得コマンドである。
-現在の表示状態に応じた測定値を返す。
-表示モードによって戻り値の構造が変わる可能性があるため、
-ctrl 層では標準 API として採用しない。
-SCPI 層では
+`MEAS?` は汎用測定値取得であり、応答が 1 値または 2 値になる可能性がある。SCPI 層では `meas_raw()` と `meas()` として公開する。
 
-```python
-meas()
-```
-
-として公開する。
-
----
+ctrl 層の標準測定では `MEAS?` ではなく `MEAS1?` を用いる。
 
 ## MEAS1?
 
-メイン表示値取得である。
-ctrl 層では
-主測定値
-として採用する。
-理由
-
-- 常に単一値として扱える
-- API の戻り値を固定できる
-- continuous 測定を単純な時系列として保存できる
-
-1shot
-continuous
-ともに MEAS1? を使用する。
-
----
+`MEAS1?` は主表示値を取得する。SCPI 層では `meas_main()`、ctrl 層では 1shot / continuous / statistics の測定値取得に使う。
 
 ## MEAS2?
 
-サブ表示取得である。
+`MEAS2?` は副表示値を取得する。SCPI 層では `meas_sub()` として公開する。ctrl 層では現状公開していない。
 
-SCPI 層では
+## CALCulate:AVERage
 
-```python
-meas_sub()
-```
+SCPI 層には `set_calc_function_average()` と `get_average_all()` がある。`get_average_all()` は `CALCulate:AVERage:ALL?` の 4 要素応答を `AverageStats` に変換する。
 
-として提供する。
-ctrl 層では現在は公開しない。
-サブ表示の意味は測定モードに依存するため、
-将来必要になった段階で専用 API として設計する。
+ctrl 層の `start_statistics_mode()` は、`use_process=True` では `CALCulate:AVERage:ALL?` の結果を `stats` として保存する。ただし、装置側 statistics の clear/start 条件が未確認であるため、`duration` 秒の厳密な時間窓平均とは扱わない。
 
----
-
-## CALCulate
-
-CALCulate は測定コマンドではなく、
-測定値に対する演算機能である。
-
-代表例
-
-- CALCulate:FUNCtion
-- CALCulate:AVERage:MINimum?
-- CALCulate:AVERage:MAXimum?
-- CALCulate:AVERage:AVERage?
-- CALCulate:AVERage:ALL?
-
-CALCulate:AVERage:ALL? は
-
-- minimum
-- maximum
-- average
-- count
-
-を返す。
-
-これは時間指定平均ではない。
-Statistics 機能である。
-Statistics の開始条件・終了条件・リセット条件については Programming Manual の記述だけでは仕様が確定できないため、
-ctrl 層では
-Statistics Mode
-というテスト機能として実装する。
-時間窓平均としては扱わない。
-
----
+`use_process=False` の `start_statistics_mode()` は、ホスト側で `MEAS1?` を繰り返し、Python 側で最小・最大・平均・count を計算する。この点は process 使用時と実装が異なる。

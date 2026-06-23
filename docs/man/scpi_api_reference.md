@@ -1,398 +1,10 @@
 # SCPI ドライバ API リファレンス
 
-`xdm1000_scpi.py` は低レベル API として提供する。
+`xdm1000_scpi.py` は低レベル SCPI API を提供する。
 
-この層は
-測定器が持つ SCPI コマンドを
-なるべくそのまま公開する。
-上位制御層で使用しない API であっても削らない。
+## AverageStats
 
----
-
-## 基本通信
-
-### open()
-
-シリアルポートを開く。
-既に開いている場合は何もしない。
-
----
-
-### close()
-
-シリアルポートを閉じる。
-
----
-
-### write(command)
-
-SCPI コマンドを送信する。
-戻り値を読まない。
-
-例
-
-```python
-dmm.write("SYSTem:REMote")
-```
-
----
-
-### query(command)
-
-SCPI クエリを送信し、文字列応答を返す。
-
-例
-
-```python
-text = dmm.query("*IDN?")
-```
-
----
-
-### query_float(command)
-
-SCPI クエリ応答を float として返す。
-
----
-
-### query_int(command)
-
-SCPI クエリ応答を int として返す。
-
----
-
-### query_bool(command)
-
-SCPI クエリ応答を bool として返す。
-
----
-
-## IEEE 488.2
-
-### idn()
-
-```text
-*IDN?
-```
-
-装置識別文字列を返す。
-
----
-
-### reset()
-
-```text
-*RST
-```
-
-装置をリセットする。
-
----
-
-## System
-
-### remote()
-
-```text
-SYSTem:REMote
-```
-
-装置を remote 状態にする。
-
-この API は SCPI ドライバ層にのみ存在する。
-
-ctrl 層には公開しない。
-
----
-
-### local()
-
-```text
-SYSTem:LOCal
-```
-
-装置を local 状態に戻す。
-
-この API は SCPI ドライバ層にのみ存在する。
-
-ctrl 層には公開しない。
-
----
-
-### set_beeper(enabled)
-
-ブザー設定を行う。
-
----
-
-### get_beeper()
-
-ブザー設定を取得する。
-
----
-
-## Sense / Configure
-
-### set_function(function)
-
-測定機能を設定する。
-
-SCPI の機能名をそのまま渡す低レベル API である。
-
----
-
-### get_function()
-
-現在の測定機能を取得する。
-
----
-
-### set_main_function(function)
-
-メイン表示側の測定機能を設定する。
-
----
-
-### get_main_function()
-
-メイン表示側の測定機能を取得する。
-
----
-
-### set_sub_function(function)
-
-サブ表示側の測定機能を設定する。
-
----
-
-### get_sub_function()
-
-サブ表示側の測定機能を取得する。
-
----
-
-### set_range(value)
-
-レンジを設定する。
-
----
-
-### get_range()
-
-レンジ設定を取得する。
-
----
-
-### auto()
-
-オートレンジを設定する。
-
----
-
-### get_auto()
-
-オートレンジ状態を取得する。
-
----
-
-### set_rate(rate)
-
-測定速度を設定する。
-
-`rate` は
-
-```text
-F
-M
-S
-```
-
-を指定する。
-
----
-
-### get_rate()
-
-測定速度設定を取得する。
-
----
-
-### configure_voltage_dc(range_value="AUTO")
-
-DC 電圧測定に設定する。
-
----
-
-### configure_voltage_ac(range_value="AUTO")
-
-AC 電圧測定に設定する。
-
----
-
-### configure_current_dc(range_value="AUTO")
-
-DC 電流測定に設定する。
-
----
-
-### configure_current_ac(range_value="AUTO")
-
-AC 電流測定に設定する。
-
----
-
-### configure_resistance(range_value="AUTO")
-
-2線抵抗測定に設定する。
-
----
-
-### configure_fresistance(range_value="AUTO")
-
-4線抵抗測定に設定する。
-
----
-
-### configure_frequency(range_value="AUTO")
-
-周波数測定に設定する。
-
----
-
-### configure_period(range_value="AUTO")
-
-周期測定に設定する。
-
----
-
-### configure_capacitance(range_value="AUTO")
-
-容量測定に設定する。
-
----
-
-### configure_temperature_rtd(rtd_type=None)
-
-RTD 温度測定に設定する。
-
----
-
-### configure_diode()
-
-ダイオード測定に設定する。
-
----
-
-### configure_continuity()
-
-導通測定に設定する。
-
----
-
-## Temperature / Continuity
-
-### set_temperature_rtd_type(rtd_type)
-
-RTD 種別を設定する。
-
----
-
-### get_temperature_rtd_type()
-
-RTD 種別を取得する。
-
----
-
-### set_temperature_unit(unit)
-
-温度単位を設定する。
-
----
-
-### get_temperature_unit()
-
-温度単位を取得する。
-
----
-
-### set_temperature_show(show)
-
-温度表示形式を設定する。
-
----
-
-### get_temperature_show()
-
-温度表示形式を取得する。
-
----
-
-### set_continuity_threshold(resistance_ohm)
-
-導通しきい値を設定する。
-
----
-
-### get_continuity_threshold()
-
-導通しきい値を取得する。
-
----
-
-## CALCulate
-
-### set_calc_state(enabled)
-
-CALCulate 機能の ON/OFF を設定する。
-
----
-
-### calc_off()
-
-CALCulate 機能を OFF にする。
-
----
-
-### set_calc_function(function)
-
-CALCulate の機能を設定する。
-
-例
-
-```text
-AVERage
-NULL
-DB
-DBM
-```
-
----
-
-### get_calc_function()
-
-現在の CALCulate 機能を取得する。
-
----
-
-### get_average_all_raw()
-
-```text
-CALCulate:AVERage:ALL?
-```
-
-の生応答を返す。
-
----
-
-### get_average_all()
-
-```text
-CALCulate:AVERage:ALL?
-```
-
-の応答を構造化して返す。
-
-戻り値は概念的に次を含む。
+`CALCulate:AVERage:ALL?` の結果を保持する単純なクラスである。
 
 ```text
 minimum
@@ -401,102 +13,166 @@ average
 count
 ```
 
----
+## Xdm1000Scpi 初期化
 
-### get_average()
+```python
+Xdm1000Scpi(
+    port,
+    timeout=1.0,
+    baudrate=115200,
+    logger=None,
+    logger_name=None,
+    log_level=None,
+    config=None,
+)
+```
 
-statistics の平均値を取得する。
+`config` がある場合は `PORT`、`TIMEOUT`、`BAUDRATE`、`LOGGER_LEVEL` を優先する。最終的に `port` がない場合は `ValueError` である。
 
----
+## ライフサイクル
 
-### get_average_maximum()
+### close()
 
-statistics の最大値を取得する。
+シリアルポートを閉じる。
 
----
+### disconnect()
 
-### get_average_minimum()
+`close()` の別名である。
 
-statistics の最小値を取得する。
+### __del__()
 
----
+破棄時に `local()` を試行し、その後 `close()` を試行する。
 
-### set_db_reference(value)
+## 基本通信
 
-dB 基準値を設定する。
+### write(command)
 
----
+SCPI コマンドを送信する。末尾に改行がなければ LF を付加する。
 
-### get_db_reference()
+### query(command)
 
-dB 基準値を取得する。
+SCPI クエリを送信し、1 行の応答文字列を返す。送信前に受信バッファをクリアする。応答が空の場合は `TimeoutError` である。
 
----
+### query_float(command)
 
-### set_dbm_reference(value)
+`query(command)` の結果を float に変換して返す。
 
-dBm 基準抵抗を設定する。
+### query_int(command)
 
----
+`query(command)` の結果を float 経由で int に変換して返す。
 
-### get_dbm_reference()
+## IEEE 488.2
 
-dBm 基準抵抗を取得する。
+### idn()
 
----
+`*IDN?` を送信し、識別文字列を返す。
 
-### set_null_offset(value)
+### reset()
 
-NULL オフセットを設定する。
+`*RST` を送信する。現状の実装では `*RST` を2回送信する。
 
----
+## System
 
-### get_null_offset()
+### remote()
 
-NULL オフセットを取得する。
+`SYSTem:REMote` を送信する。
 
----
+### local()
+
+`SYSTem:LOCal` を送信する。
+
+### set_beeper(enabled)
+
+`SYSTem:BEEPer:STATe ON/OFF` を送信する。
+
+### get_beeper()
+
+`SYSTem:BEEPer:STATe?` を取得し、0 以外を True として返す。
+
+## Configure
+
+### configure_voltage_dc(range_value="AUTO")
+
+`CONFigure:VOLTage:DC {range_value}` を送信する。
+
+### configure_voltage_ac(range_value="AUTO")
+
+`CONFigure:VOLTage:AC {range_value}` を送信する。
+
+### configure_current_dc(range_value="AUTO")
+
+`CONFigure:CURRent:DC {range_value}` を送信する。
+
+### configure_current_ac(range_value="AUTO")
+
+`CONFigure:CURRent:AC {range_value}` を送信する。
+
+### configure_resistance(range_value="AUTO")
+
+`CONFigure:RESistance {range_value}` を送信する。
+
+### configure_fresistance(range_value="AUTO")
+
+`CONFigure:FRESistance {range_value}` を送信する。
+
+### configure_frequency()
+
+`CONFigure:FREQuency` を送信する。
+
+### configure_period()
+
+`CONFigure:PERiod` を送信する。
+
+### configure_capacitance(range_value="AUTO")
+
+`CONFigure:CAPacitance {range_value}` を送信する。
+
+### configure_temperature_rtd()
+
+`CONFigure:TEMPerature:RTD` を送信する。
+
+### configure_diode()
+
+`CONFigure:DIODe` を送信する。
+
+### configure_continuity()
+
+`CONFigure:CONTinuity` を送信する。
+
+## CALCulate
+
+### set_calc_function_average()
+
+`CALCulate:FUNCtion AVERage` を送信する。
+
+### get_average_all()
+
+`CALCulate:AVERage:ALL?` を取得し、4 要素の応答を `AverageStats` として返す。要素数が4でない場合は `ValueError` である。
+
+## RATE
+
+### set_rate(speed)
+
+`RATE {speed}` を送信する。実装上は値検証をしない。
+
+### get_rate()
+
+`RATE?` の文字列応答を返す。
 
 ## Measure
 
 ### meas_raw()
 
-```text
-MEAS?
-```
-
-の生応答を返す。
-
----
+`MEAS?` の応答を文字列のまま返す。
 
 ### meas()
 
-```text
-MEAS?
-```
-
-の応答を float または tuple として返す。
-戻り値の構造は装置の表示状態に依存する可能性がある。
-したがって ctrl 層の標準測定 API では使用しない。
-
----
+`MEAS?` のカンマ区切り応答を float 化する。1 要素なら float、2 要素なら `(main, sub)` の tuple を返す。それ以外は `ValueError` である。
 
 ### meas_main()
 
-```text
-MEAS1?
-```
-
-メイン表示値を float として返す。
-ctrl 層の 1shot / continuous ではこれを使用する。
-
----
+`MEAS1?` を float として返す。
 
 ### meas_sub()
 
-```text
-MEAS2?
-```
-
-サブ表示値を float として返す。
-ctrl 層の基本 API では使用しない。
+`MEAS2?` を float として返す。
