@@ -23,17 +23,16 @@ man/implementation_notes
 
 ## 構成
 
-- [tutorial](man/tutorial.md)
-- manual
-  - [システム構成](man/architecture.md)
-  - [設計方針](man/design_policy.md)
-  - [SCPI ドライバ層の概要](man/scpi_layer_overview.md)
-  - [SCPI 採用方針](man/scpi_policy.md)
-  - [上位制御層](man/control_layer.md)
-  - [FastAPI 公開レイヤ](man/fastapi_layer.md)
-  - [SCPI ドライバ API リファレンス](man/scpi_api_reference.md)
-  - [ctrl API リファレンス](man/ctrl_api_reference.md)
-  - [実装上の注意事項](man/implementation_notes.md)
+- [チュートリアル](man/tutorial.md)
+- [システム構成](man/architecture.md)
+- [設計方針](man/design_policy.md)
+- [SCPI ドライバ層の概要](man/scpi_layer_overview.md)
+- [SCPI 採用方針](man/scpi_policy.md)
+- [上位制御層](man/control_layer.md)
+- [FastAPI 公開レイヤ](man/fastapi_layer.md)
+- [SCPI ドライバ API リファレンス](man/scpi_api_reference.md)
+- [ctrl API リファレンス](man/ctrl_api_reference.md)
+- [実装上の注意事項](man/implementation_notes.md)
 
 ## 推奨読順
 
