@@ -1,5 +1,5 @@
-# コボッタ制御
-view on [github](https://github.com/ohara-lab-su/cobotta2/) / [ohara-lab-su (doc)](https://ohara-lab-su.github.io/)
+# OWON XDM1000/XDM1241 制御ライブラリ
+view on [github](https://github.com/ohara-lab-su/xdm1000) / [ohara-lab-su (doc)](https://ohara-lab-su.github.io/)
 
 ---
 ```{toctree}
@@ -7,11 +7,11 @@ view on [github](https://github.com/ohara-lab-su/cobotta2/) / [ohara-lab-su (doc
 :caption: Contents:
 
 man/architecture
-man/fastapi_layer
 man/design_policy
-man/scpi_policy
 man/scpi_layer_overview
+man/scpi_policy
 man/control_layer
+man/fastapi_layer
 man/scpi_api_reference
 man/ctrl_api_reference
 man/implementation_notes
