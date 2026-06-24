@@ -408,6 +408,85 @@ class Xdm1000Scpi(object):
         """導通テスト のファンクションを設定する。"""
         self.write("CONFigure:CONTinuity")
 
+
+    def set_function(
+        self,
+        function,
+        display=1,
+    ):
+        """SENSe:FUNCtion により測定機能を選択する。
+
+        Args:
+            function (str): SCPI の測定機能名。例: 'VOLT', 'VOLT AC', 'CURR', 'RES'
+            display (int): 表示番号。1 は主表示、2 は副表示。デフォルトは 1。
+        """
+        if int(display) == 1:
+            self.write('FUNCtion "{0}"'.format(function))
+        elif int(display) == 2:
+            self.write('FUNCtion2 "{0}"'.format(function))
+        else:
+            raise ValueError("display は 1 または 2 でなければならない。")
+
+    def get_function(
+        self,
+        display=1,
+    ):
+        """SENSe:FUNCtion? により現在の測定機能を取得する。
+
+        Args:
+            display (int): 表示番号。1 は主表示、2 は副表示。
+
+        Returns:
+            str: 測定器が返す測定機能文字列
+        """
+        if int(display) == 1:
+            return self.query("FUNCtion?")
+        if int(display) == 2:
+            return self.query("FUNCtion2?")
+        raise ValueError("display は 1 または 2 でなければならない。")
+
+    def set_range(
+        self,
+        range_value,
+    ):
+        """RANGE により現在の測定機能のレンジを設定する。
+
+        Args:
+            range_value (str/int/float): RANGE に渡す値。例: 1, 2, 'DEF'
+        """
+        self.write("RANGE {0}".format(range_value))
+
+    def set_auto_range(
+        self,
+        enabled=True,
+    ):
+        """AUTO によりオートレンジを有効化する。
+
+        XDM1000 の Programming Manual では AUTO は有効化コマンドであり、
+        OFF パラメータ付きの汎用 AUTO OFF は定義されていない。False を指定した場合、
+        明示的なレンジは set_range() で設定する。
+
+        Args:
+            enabled (bool): True の場合のみ AUTO を送る。
+
+        Raises:
+            ValueError: False が指定された場合。
+        """
+        if bool(enabled):
+            self.write("AUTO")
+            return
+        raise ValueError("AUTO OFF は汎用 SCPI として定義されていない。手動レンジは set_range() を使う。")
+
+    def get_auto_range(
+        self,
+    ):
+        """AUTO? によりオートレンジ状態を取得する。
+
+        Returns:
+            bool: オートレンジ有効なら True。
+        """
+        return self.query_int("AUTO?") != 0
+
     def set_calc_function_average(
         self,
     ):
@@ -444,10 +523,10 @@ class Xdm1000Scpi(object):
         self,
         speed,
     ):
-        """測定速度を設定する。speed は F, M, L のいずれかである。
+        """測定速度を設定する。speed は F, M, S のいずれかである。
 
         Args:
-            speed (str): 'F' (Fast), 'M' (Medium), 'L' (Slow / Low speed)
+            speed (str): 'F' (Fast), 'M' (Medium), 'S' (Slow / Low speed)
         """
         self.write("RATE {0}".format(speed))
 
@@ -457,7 +536,7 @@ class Xdm1000Scpi(object):
         """測定速度を取得する。
 
         Returns:
-            str: 現在の測定速度文字 ('F', 'M', または 'L')
+            str: 現在の測定速度文字 ('F', 'M', または 'S')
         """
         return self.query("RATE?")
 

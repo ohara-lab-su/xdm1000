@@ -9,9 +9,12 @@
 - `query_float()` / `query_int()` による基本型変換
 - IEEE 488.2 の `idn()` / `reset()`
 - System の `remote()` / `local()` / beeper 設定
-- `CONFigure:*` による測定機能・レンジ設定
-- `RATE` による測定速度設定
-- `MEAS?` / `MEAS1?` / `MEAS2?` による測定値取得
+- `CONFigure:*` 系コマンドの薄いラッパ
+- `FUNCtion` / `FUNCtion?`
+- `RANGE`
+- `AUTO` / `AUTO?`
+- `RATE` / `RATE?`
+- `MEAS?` / `MEAS1?` / `MEAS2?`
 - `CALCulate:AVERage:ALL?` の構造化
 
 ## 通信仕様
@@ -33,17 +36,8 @@ serial.Serial(
 )
 ```
 
-## 測定速度
+## ctrl 層との関係
 
-現状の実装は `RATE {speed}` と `RATE?` を使う。`speed` は文字列で指定する。
+SCPI 層は上位 API の状態管理を持たない。`set_mode()`、`set_range()`、`meas_continue()`、`get_result()` などの利用者向け API、worker process、設定キャッシュ、結果キャッシュは ctrl 層の責務である。
 
-ソースコード上の docstring では `F`、`M`、`L` と記載されている。一方、ctrl 層の引数説明では `F`、`M`、`S` と記載されている。現状の実装は値の検証を行わず、渡された文字列をそのまま `RATE` に渡す。
-
-## 測定値取得
-
-- `meas_raw()` は `MEAS?` の生文字列を返す。
-- `meas()` は `MEAS?` を float または 2 要素 tuple に変換する。
-- `meas_main()` は `MEAS1?` を float として返す。
-- `meas_sub()` は `MEAS2?` を float として返す。
-
-ctrl 層の 1shot / continuous / statistics では主表示値取得として `meas_main()`、すなわち `MEAS1?` を使う。
+ctrl 層の標準測定値取得は `meas_main()`、すなわち `MEAS1?` を使う。

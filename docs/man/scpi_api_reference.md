@@ -69,7 +69,7 @@ SCPI クエリを送信し、1 行の応答文字列を返す。送信前に受�
 
 ### reset()
 
-`*RST` を送信する。現状の実装では `*RST` を2回送信する。
+`*RST` を送信する。
 
 ## System
 
@@ -153,7 +153,7 @@ SCPI クエリを送信し、1 行の応答文字列を返す。送信前に受�
 
 ### set_rate(speed)
 
-`RATE {speed}` を送信する。実装上は値検証をしない。
+`RATE {speed}` を送信する。実装上は値検証をしない。ctrl 層では `set_integration_speed()` が `F/M/S` を検証する。
 
 ### get_rate()
 
