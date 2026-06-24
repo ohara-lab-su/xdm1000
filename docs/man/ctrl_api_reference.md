@@ -1,16 +1,19 @@
 # ctrl API リファレンス
 
-`xdm1000_ctrl.py` は上位制御 API を提供する。SCPI ドライバの全 API を公開するものではない。
+`xdm1000_ctrl.py` は利用者向けの上位制御 API を提供する。SCPI 層は SCPI コマンドの薄いラッパであり、ctrl 層では測定器の設定値をキャッシュし、単発測定と連続測定の入口だけを分ける。
 
-## 例外
+## 設計方針
 
-### DeviceBusyError
+測定条件は `meas()` / `meas_continue()` の引数に混ぜない。測定前に `set_mode()`、`set_range()`、`set_auto_range()`、`set_integration_speed()` で測定器状態を設定する。
 
-running 中に、同時実行できない測定・設定 API が呼ばれた場合に送出される。
+単発測定と連続測定は、測定入口で分ける。
 
-### DeviceWorkerError
+```python
+value = dmm.meas()
+job = dmm.meas_continue()
+```
 
-worker process 側で発生した例外を親プロセス側へ伝播するために送出される。
+連続測定だけに必要な周期・終了条件は、`set_continue_interval()`、`set_continue_duration()`、`set_continue_count()` で設定する。
 
 ## Xdm1000Ctrl 初期化
 
@@ -28,125 +31,66 @@ Xdm1000Ctrl(
 
 `config` がある場合は `PORT`、`TIMEOUT`、`BAUDRATE` を優先する。最終的に `port` がない場合は `ValueError` である。
 
-## ライフサイクル
+`use_process=True` では worker process が実体の SCPI オブジェクトを持つ。親プロセス側は worker に命令を送り、共有 state / result store から状態と結果を読む。
+
+`use_process=False` では同一プロセス内で SCPI オブジェクトを直接持つ。
+
+## 状態・ライフサイクル
 
 ### close()
 
-`use_process=True` では worker へ `shutdown` を送り、終了しない場合は terminate する。その後 manager を shutdown する。`use_process=False` では `local()` を試行し、シリアルポートを閉じる。
+接続または worker process を閉じる。
 
 ### disconnect()
 
 `close()` の別名である。
 
-## 状態取得
-
 ### get_state()
 
-現在状態を dict として返す。`use_process=True` では共有 state に `process_alive` を加える。`use_process=False` では direct state に `process_alive=False` を加える。
+現在状態を dict として返す。
+
+主なキーは以下である。
+
+```python
+{
+    "worker_alive": True,
+    "process_alive": True,
+    "running": False,
+    "job_id": None,
+    "job_type": None,
+    "mode": "voltage_dc",
+    "range_value": 10,
+    "auto_range": False,
+    "integration_speed": "F",
+    "continue_interval": 0.1,
+    "continue_duration": 10.0,
+    "continue_count": None,
+    "error": None,
+    "traceback": None,
+}
+```
 
 ### is_running()
 
-running 中なら True を返す。
+連続測定中なら True を返す。
 
 ### wait_until_done(poll_interval=0.2)
 
-`get_state()` を繰り返し、`running` が False になるまで待つ。現状の実装ではループごとに `STATE:` を標準出力へ出す。
+`running` が False になるまで待つ。
 
-## 停止
+## 設定 API
 
-### stop_job()
+### set_mode(mode)
 
-長時間測定に停止要求を出す。戻り値は要求直後の state である。
+測定モードを設定する。単発測定と連続測定で共通である。
 
-`use_process=True` では `stop_event.set()` を行う。`use_process=False` では direct 停止フラグを立てる。
-
-## 結果取得
-
-### get_continuous_result(clear=False)
-
-保存済み continuous 結果を返す。存在しない場合は None である。`clear=True` の場合は取得後に保存結果を削除または None にする。
-
-`use_process=True` の結果例:
+Args:
 
 ```python
-{
-    "job_id": "...",
-    "ok": True,
-    "stopped": False,
-    "kind": "voltage_dc",
-    "range_value": "AUTO",
-    "rate": "F",
-    "duration_requested": 10.0,
-    "stats": {
-        "count": 100,
-        "minimum": 1.23,
-        "maximum": 1.25,
-        "average": 1.24,
-        "stdev_population": 0.01,
-    },
-    "started_at": 1710000000.0,
-    "finished_at": 1710000010.0,
-    "samples": [
-        {
-            "index": 0,
-            "value": 1.234,
-            "host_time_start": 1710000000.0,
-            "host_time_end": 1710000000.02,
-            "read_elapsed": 0.02,
-            "t_rel_start": 0.0,
-            "t_rel_end": 0.02,
-        }
-    ],
-}
+mode: str
 ```
 
-### get_statistics_result(clear=False)
-
-保存済み statistics 結果を返す。存在しない場合は None である。`clear=True` の場合は取得後に保存結果を削除または None にする。
-
-`use_process=True` の結果例:
-
-```python
-{
-    "job_id": "...",
-    "ok": True,
-    "stopped": False,
-    "kind": "voltage_dc",
-    "range_value": "AUTO",
-    "rate": "F",
-    "duration_requested": 10.0,
-    "stats": {
-        "minimum": 1.23,
-        "maximum": 1.25,
-        "average": 1.24,
-        "count": 120,
-    },
-    "note": "CALCulate:AVERage:ALL? を使った statistics テスト結果である。...",
-    "started_at": 1710000000.0,
-    "finished_at": 1710000010.0,
-    "values": [1.23, 1.24],
-}
-```
-
-## 通常 API
-
-### idn()
-
-`*IDN?` の結果を返す。running 中は実行できない。
-
-### set_meas_mode(kind, range_value="AUTO", rate="F")
-
-測定種別、レンジ、レートを設定する。戻り値は次の dict である。
-
-```python
-{
-    "kind": kind,
-    "range_value": range_value,
-    "rate": rate,
-}
-```
-
-利用可能な `kind` は次である。
+利用可能な `mode` は以下である。
 
 ```text
 voltage_dc
@@ -163,17 +107,168 @@ diode
 continuity
 ```
 
-### meas_one_shot(kind=None, range_value=None, rate=None, settle=0.0)
+SCPI 側では `FUNCtion "..."` を発行する。
 
-1回だけ測定する。省略された `kind`、`range_value`、`rate` は現在キャッシュまたは既定値で補完される。
+`set_mode()` を呼ぶと、以前の `range_value` と `auto_range` のキャッシュは無効化される。レンジは測定モードに依存するためである。
 
-戻り値は dict である。
+Returns:
+
+```python
+{"mode": mode}
+```
+
+### set_range(range_value)
+
+現在の測定モードに対する手動レンジを設定する。単発測定と連続測定で共通である。
+
+Args:
+
+```python
+range_value: str | int | float
+```
+
+例:
+
+```python
+dmm.set_range(10)
+dmm.set_range("DEF")
+```
+
+SCPI 側では `RANGE <range_value>` を発行する。呼び出し後、`auto_range` キャッシュは False になる。
+
+Returns:
+
+```python
+{"range_value": range_value}
+```
+
+### set_auto_range(enabled)
+
+オートレンジを設定する。単発測定と連続測定で共通である。
+
+Args:
+
+```python
+enabled: bool
+```
+
+`enabled=True` の場合、SCPI 側では `AUTO` を発行する。
+
+`enabled=False` の場合、XDM1000 の SCPI には汎用の `AUTO OFF` を送らず、直近の `set_range()` で保持している手動レンジを `RANGE <range_value>` で再設定する。したがって `enabled=False` にするには、先に `set_range()` が必要である。
+
+Returns:
+
+```python
+{"auto_range": True | False}
+```
+
+### set_integration_speed(speed)
+
+内部測定速度を設定する。単発測定と連続測定で共通である。
+
+Args:
+
+```python
+speed: str
+```
+
+指定値は以下である。
+
+```text
+F: high speed
+M: middle speed
+S: low speed
+```
+
+SCPI コマンド名は `RATE` だが、ctrl API では測定点間隔と誤解しないように `integration_speed` と呼ぶ。これは連続測定の周期ではない。連続測定の周期は `set_continue_interval()` で設定する。
+
+Returns:
+
+```python
+{"integration_speed": speed}
+```
+
+## 連続測定条件 API
+
+### set_continue_interval(interval)
+
+連続測定時の測定開始間隔を設定する。
+
+Args:
+
+```python
+interval: float
+```
+
+単位は秒である。0 以上の値を指定する。`0.0` の場合は可能な限り連続して読む。
+
+Returns:
+
+```python
+{"continue_interval": interval}
+```
+
+### set_continue_duration(duration)
+
+連続測定の最大測定時間を設定する。
+
+Args:
+
+```python
+duration: float | None
+```
+
+単位は秒である。`None` で時間制限を無効化する。`duration` と `continue_count` が両方設定されている場合は、先に到達した条件で終了する。
+
+Returns:
+
+```python
+{"continue_duration": duration}
+```
+
+### set_continue_count(count)
+
+連続測定の最大測定回数を設定する。
+
+Args:
+
+```python
+count: int | None
+```
+
+`None` で回数制限を無効化する。`duration` と `count` が両方 None の場合、`meas_continue()` は `ValueError` である。
+
+Returns:
+
+```python
+{"continue_count": count}
+```
+
+## 測定 API
+
+### meas(wait=None)
+
+現在設定で 1 回測定する。
+
+Args:
+
+```python
+wait: float | None = None
+```
+
+`wait` は SCPI 機能ではない。Python 側で測定直前に待つ秒数である。`None` の場合は待たない。
+
+`mode`、`range_value`、`integration_speed` は引数に持たせない。必要なら測定前に設定 API を呼ぶ。
+
+Returns:
 
 ```python
 {
-    "kind": "voltage_dc",
-    "range_value": "AUTO",
-    "rate": "F",
+    "type": "single",
+    "mode": "voltage_dc",
+    "range_value": 10,
+    "auto_range": False,
+    "integration_speed": "F",
     "value": 1.234,
     "host_time_start": 1710000000.0,
     "host_time_end": 1710000000.02,
@@ -181,42 +276,79 @@ continuity
 }
 ```
 
-### meas(kind=None, range_value=None, rate=None, settle=0.0)
+戻り値は `get_result()` でも取得できるように保存される。
 
-`meas_one_shot()` の短縮名である。戻り値も `meas_one_shot()` と同じ dict である。
+### meas_continue(wait=None)
 
-### meas_voltage_dc(range_value=None, rate=None, settle=0.0)
+現在設定で連続測定を開始する。
 
-`kind="voltage_dc"` で `meas_one_shot()` を呼ぶ。
+Args:
 
-### meas_current_dc(range_value=None, rate=None, settle=0.0)
+```python
+wait: float | None = None
+```
 
-`kind="current_dc"` で `meas_one_shot()` を呼ぶ。
+`wait` は SCPI 機能ではない。Python 側で連続測定開始前に待つ秒数である。`None` の場合は待たない。
 
-## 長時間測定 API
+`meas_continue()` の前に、`set_continue_duration()` または `set_continue_count()` の少なくとも一方を設定する必要がある。
 
-### start_continuous_meas(kind=None, duration=0.0, range_value=None, rate=None, interval=0.0, settle=0.0)
-
-疑似 continuous 測定を開始する。`duration <= 0.0` または `interval < 0.0` は `ValueError` である。
-
-戻り値は次である。
+Returns:
 
 ```python
 {"job_id": "..."}
 ```
 
-`use_process=True` では開始成功時に戻り、測定は worker process で継続する。結果は `get_continuous_result()` で取得する。
+`use_process=True` では worker process が測定を継続し、呼び出し元には job_id だけ返る。結果は `get_result()` で取得する。
 
-`use_process=False` では呼び出し元で測定ループを実行し、終了後に戻る。
+`use_process=False` では同一プロセス内で測定ループを実行し、終了後に job_id を返す。
 
-### start_statistics_mode(kind=None, duration=0.0, range_value=None, rate=None, settle=0.0)
+## 結果取得 API
 
-statistics mode のテスト測定を開始する。`duration <= 0.0` は `ValueError` である。
+### get_result(clear=False)
 
-戻り値は次である。
+直近の単発測定または連続測定結果を返す。
+
+Args:
 
 ```python
-{"job_id": "..."}
+clear: bool = False
 ```
 
-`use_process=True` では `CALCulate:AVERage:ALL?` の結果を保存する。`use_process=False` では Python 側で値列から統計を計算する。
+`clear=True` の場合は、取得後に保存結果を消す。
+
+単発測定後の結果は `type="single"` である。連続測定後の結果は `type="continuous"` である。
+
+連続測定結果例:
+
+```python
+{
+    "type": "continuous",
+    "job_id": "...",
+    "ok": True,
+    "mode": "voltage_dc",
+    "range_value": 10,
+    "auto_range": False,
+    "integration_speed": "F",
+    "continue_interval": 0.1,
+    "continue_duration": 10.0,
+    "continue_count": None,
+    "stats": {
+        "count": 100,
+        "minimum": 1.23,
+        "maximum": 1.25,
+        "average": 1.24,
+        "stdev_population": 0.01
+    },
+    "samples": [
+        {
+            "index": 0,
+            "value": 1.234,
+            "host_time_start": 1710000000.0,
+            "host_time_end": 1710000000.02,
+            "read_elapsed": 0.02,
+            "t_rel_start": 0.0,
+            "t_rel_end": 0.02
+        }
+    ]
+}
+```

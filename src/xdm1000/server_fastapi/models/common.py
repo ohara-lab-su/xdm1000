@@ -40,58 +40,52 @@ class OptionalDictResponse(BaseModel):
     value: Optional[Dict[str, Any]] = None
 
 
-class MeasModeRequest(BaseModel):
-    """測定種別・レンジ・速度を受け取る。"""
+class ModeRequest(BaseModel):
+    """測定モードを受け取る。"""
 
-    kind: str
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
+    mode: str
 
 
-class MeasOneShotRequest(BaseModel):
-    """1 shot 測定条件を受け取る。"""
+class RangeRequest(BaseModel):
+    """測定レンジを受け取る。"""
 
-    kind: str
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
-    settle: float = 0.0
+    range_value: ScpiValue
 
 
-class MeasRequest(BaseModel):
-    """短縮 1 shot 測定条件を受け取る。"""
+class AutoRangeRequest(BaseModel):
+    """オートレンジ設定を受け取る。"""
 
-    kind: str = "voltage_dc"
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
-    settle: float = 0.0
+    enabled: bool
 
 
-class MeasSimpleRequest(BaseModel):
-    """電圧・電流 1 shot 測定条件を受け取る。"""
+class IntegrationSpeedRequest(BaseModel):
+    """内部測定速度を受け取る。"""
 
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
-
-
-class ContinuousMeasRequest(BaseModel):
-    """擬似 continuous 測定条件を受け取る。"""
-
-    kind: str
-    duration: float
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
-    interval: float = 0.0
-    settle: float = 0.0
+    speed: str
 
 
-class StatisticsModeRequest(BaseModel):
-    """statistics mode 測定条件を受け取る。"""
+class ContinueIntervalRequest(BaseModel):
+    """連続測定間隔を受け取る。"""
 
-    kind: str
-    duration: float
-    range_value: ScpiValue = "AUTO"
-    rate: str = "F"
-    settle: float = 0.0
+    interval: float
+
+
+class ContinueDurationRequest(BaseModel):
+    """連続測定時間を受け取る。None で無効化する。"""
+
+    duration: Optional[float] = None
+
+
+class ContinueCountRequest(BaseModel):
+    """連続測定回数を受け取る。None で無効化する。"""
+
+    count: Optional[int] = None
+
+
+class WaitRequest(BaseModel):
+    """測定前待機時間を受け取る。None なら待機しない。"""
+
+    wait: Optional[float] = None
 
 
 class ClearRequest(BaseModel):
