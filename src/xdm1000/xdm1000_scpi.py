@@ -58,11 +58,11 @@ class Xdm1000Scpi(object):
 
     def __init__(
         self,
-        port,
+        port=None,
         timeout=1.0,
         baudrate=115200,
         logger=None,
-        logger_name=None,
+        # logger_name=None,
         log_level=None,
         config=None,
     ):
@@ -76,7 +76,6 @@ class Xdm1000Scpi(object):
             timeout (float, optional): 通信のタイムアウト秒。デフォルトは 1.0 秒
             baudrate (int, optional): ボーレート。デフォルトは 115200
             logger (logging.Logger, optional): 外部から注入されるロガーインスタンス
-            logger_name (any, optional): 本実装では未使用のプレースホルダ
             log_level (str, optional): ログレベル文字列 (例: 'DEBUG', 'INFO')
             config (Config, optional): 各種設定値を保持するConfigオブジェクト
 
@@ -408,7 +407,6 @@ class Xdm1000Scpi(object):
         """導通テスト のファンクションを設定する。"""
         self.write("CONFigure:CONTinuity")
 
-
     def set_function(
         self,
         function,
@@ -475,7 +473,9 @@ class Xdm1000Scpi(object):
         if bool(enabled):
             self.write("AUTO")
             return
-        raise ValueError("AUTO OFF は汎用 SCPI として定義されていない。手動レンジは set_range() を使う。")
+        raise ValueError(
+            "AUTO OFF は汎用 SCPI として定義されていない。手動レンジは set_range() を使う。"
+        )
 
     def get_auto_range(
         self,
@@ -614,10 +614,11 @@ def main(
         config = None
 
     # ポートのオープンと通信条件確立
+    # IP 仕様ではなくて port のみ (USBなので)
     dmm = Xdm1000Scpi(
-        port="/dev/cu.usbserial-10",
-        timeout=2.0,
-        baudrate=115200,
+        # port="/dev/cu.usbserial-10",
+        # timeout=2.0,
+        # baudrate=115200,
         config=config,
     )
 
