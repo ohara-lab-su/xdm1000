@@ -46,8 +46,8 @@ class Config:
 
         # 新しいパス解決ロジックを使用
         resolved_path = cls._resolve_path(yaml_path=yaml_path, depth=2)
-        with open(resolved_path, "r") as f:
-            data = yaml.safe_load(f)
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
 
         for k, v in data.items():
             if hasattr(cls, k):
@@ -73,8 +73,8 @@ class Config:
         resolved_path = self._resolve_path(yaml_path=yaml_path, depth=depth)
 
         print("resolved_path:", resolved_path)
-        with open(resolved_path, "r") as f:
-            data = yaml.safe_load(f)
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
         for k, v in data.items():
             setattr(self, k, v)
 
