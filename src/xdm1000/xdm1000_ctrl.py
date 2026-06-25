@@ -15,7 +15,6 @@ from xdm1000.config import Config
 from xdm1000.xdm1000_scpi import Xdm1000Scpi
 from xdm1000.xdm1000_worker import _Xdm1000Worker
 
-
 MODE_TO_SCPI_FUNCTION = {
     "voltage_dc": "VOLT",
     "voltage_ac": "VOLT AC",
@@ -43,7 +42,9 @@ def _validate_integration_speed(speed):
     """XDM1000 の RATE パラメータを検証する。"""
     speed = str(speed).upper()
     if speed not in ("F", "M", "S"):
-        raise ValueError("integration_speed は 'F', 'M', 'S' のいずれかでなければならない。")
+        raise ValueError(
+            "integration_speed は 'F', 'M', 'S' のいずれかでなければならない。"
+        )
     return speed
 
 
@@ -273,12 +274,16 @@ class Xdm1000Ctrl(object):
                 except queue.Empty:
                     raise TimeoutError("worker 応答待ち timeout: {0!r}".format(name))
                 if response.get("req_id") != req_id:
-                    raise RuntimeError("worker response の req_id が一致しない: {0!r}".format(response))
+                    raise RuntimeError(
+                        "worker response の req_id が一致しない: {0!r}".format(response)
+                    )
                 if response.get("ok"):
                     self._sync_from_worker_state()
                     return response.get("result")
                 raise DeviceWorkerError(
-                    "{0}\n{1}".format(response.get("error"), response.get("traceback", ""))
+                    "{0}\n{1}".format(
+                        response.get("error"), response.get("traceback", "")
+                    )
                 )
 
     def _sync_from_worker_state(self):
@@ -407,7 +412,9 @@ class Xdm1000Ctrl(object):
             self._auto_range = True
         else:
             if self._range_value is None:
-                raise ValueError("auto_range=False にするには、先に set_range() で手動レンジを設定する必要がある。")
+                raise ValueError(
+                    "auto_range=False にするには、先に set_range() で手動レンジを設定する必要がある。"
+                )
             self.scpi.set_range(self._range_value)
             self._auto_range = False
         self._publish_direct_state()
@@ -431,7 +438,9 @@ class Xdm1000Ctrl(object):
         if interval < 0.0:
             raise ValueError("interval は 0 以上でなければならない。")
         if self.use_process:
-            return self._rpc("set_continue_interval", {"interval": interval}, timeout=5.0)
+            return self._rpc(
+                "set_continue_interval", {"interval": interval}, timeout=5.0
+            )
         self._continue_interval = interval
         self._publish_direct_state()
         return {"continue_interval": interval}
@@ -444,7 +453,9 @@ class Xdm1000Ctrl(object):
             if duration <= 0.0:
                 raise ValueError("duration は正の値でなければならない。")
         if self.use_process:
-            return self._rpc("set_continue_duration", {"duration": duration}, timeout=5.0)
+            return self._rpc(
+                "set_continue_duration", {"duration": duration}, timeout=5.0
+            )
         self._continue_duration = duration
         self._publish_direct_state()
         return {"continue_duration": duration}
@@ -466,7 +477,9 @@ class Xdm1000Ctrl(object):
         """現在設定で 1 回測定する。"""
         self._require_not_running()
         if self.use_process:
-            result = self._rpc("meas", {"wait": wait}, timeout=10.0 + max(0.0, float(wait or 0.0)))
+            result = self._rpc(
+                "meas", {"wait": wait}, timeout=10.0 + max(0.0, float(wait or 0.0))
+            )
             self._latest_result = result
             return result
 
@@ -515,7 +528,9 @@ class Xdm1000Ctrl(object):
         """現在設定で連続測定する。"""
         self._require_not_running()
         if self._continue_duration is None and self._continue_count is None:
-            raise ValueError("meas_continue() の前に set_continue_duration() または set_continue_count() を設定する必要がある。")
+            raise ValueError(
+                "meas_continue() の前に set_continue_duration() または set_continue_count() を設定する必要がある。"
+            )
 
         if self.use_process:
             job_id = uuid.uuid4().hex
@@ -638,10 +653,17 @@ def main(config_path="xdm1000_example.yml"):
     if config is not None:
         port = getattr(config, "PORT", port)
 
-    dmm = Xdm1000Ctrl(port=port, config=config, use_process=False)
+    # dmm = Xdm1000Ctrl(
+    #     port=port,
+    #     timeout=2.0,
+    #     baudrate=115200,
+    #     use_process=False,
+    # )
+    dmm = Xdm1000Ctrl(config=config, use_process=False)
     try:
         print("IDN:", dmm.idn())
-        dmm.set_mode("voltage_dc")
+        # dmm.set_mode("voltage_dc")
+        dmm.set_mode("current_dc")
         dmm.set_auto_range(True)
         dmm.set_integration_speed("F")
 
