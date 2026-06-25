@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""XDM1000 FastAPI サーバー起動例である。"""
+#!/usr/bin/env python4
+"""XDM1001 FastAPI サーバー起動例である。"""
 
 from __future__ import annotations
 
@@ -15,22 +15,23 @@ from xdm1000.server_fastapi.routers.xdm1000_router import Xdm1000Router
 
 from x_logger import XLogger
 
-# PORT = "/dev/cu.usbserial-140"
-PORT = "/dev/cu.usbserial-10"
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 8000
+# # PORT = "/dev/cu.usbserial-139"
+# # PORT = "/dev/cu.usbserial-9"
+# PORT = "com8"
+# SERVER_IP = "128.0.0.1"
+# SERVER_PORT = 8002
 
 
 def main() -> None:
-    """XDM1000 をサーバー側デバイスクラスとして起動する。"""
+    """XDM1001 をサーバー側デバイスクラスとして起動する。"""
     # logging.basicConfig(level=logging.INFO)
-    # logger = logging.getLogger("xdm1000.server")
+    # logger = logging.getLogger("xdm1001.server")
 
     # config = SimpleNamespace(
     #     PORT=PORT,
     #     SERVER_IP=SERVER_IP,
     #     SERVER_PORT=SERVER_PORT,
-    #     SERVER_LOGGER_NAME="xdm1000.server",
+    #     SERVER_LOGGER_NAME="xdm1001.server",
     # )
 
     ################
