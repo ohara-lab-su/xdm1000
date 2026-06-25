@@ -1,6 +1,8 @@
 # ctrl API リファレンス
 
-`xdm1000_ctrl.py` は利用者向けの上位制御 API を提供する。SCPI 層は SCPI コマンドの薄いラッパであり、ctrl 層では測定器の設定値をキャッシュし、単発測定と連続測定の入口だけを分ける。
+`xdm1000_ctrl.py` は XDM1000 / XDM1241 を測定器として扱う利用者向け上位制御 API を提供する。SCPI 層は SCPI コマンドの薄いラッパであり、ctrl 層では測定モード、レンジ、オートレンジ、内部測定速度、連続測定条件を上位 API として整理する。
+
+本書は現在の `xdm1000_ctrl.py`、`xdm1000_worker.py`、`server_fastapi/spec.py` に合わせた API リファレンスである。
 
 ## 設計方針
 
@@ -9,11 +11,50 @@
 単発測定と連続測定は、測定入口で分ける。
 
 ```python
-value = dmm.meas()
+result = dmm.meas()
 job = dmm.meas_continue()
 ```
 
 連続測定だけに必要な周期・終了条件は、`set_continue_interval()`、`set_continue_duration()`、`set_continue_count()` で設定する。
+
+## 公開 API
+
+現在の `Xdm1000Ctrl` が利用者向けに持つ主な API は以下である。
+
+```text
+close()
+disconnect()
+get_state()
+is_running()
+idn()
+set_mode(mode)
+set_range(range_value)
+set_auto_range(enabled)
+set_integration_speed(speed)
+set_continue_interval(interval)
+set_continue_duration(duration)
+set_continue_count(count)
+meas(wait=None)
+meas_continue(wait=None)
+get_result(clear=False)
+wait_until_done(poll_interval=0.2)
+```
+
+以下の旧 API は現在の `Xdm1000Ctrl` には存在しない。
+
+```text
+set_meas_mode()
+meas_one_shot()
+meas_voltage_dc()
+meas_current_dc()
+start_continuous_meas()
+start_statistics_mode()
+get_continuous_result()
+get_statistics_result()
+stop_job()
+```
+
+`remote()`、`local()`、`query()`、`write()` は ctrl API として公開しない。これらは SCPI 層の責務である。
 
 ## Xdm1000Ctrl 初期化
 
@@ -33,13 +74,17 @@ Xdm1000Ctrl(
 
 `use_process=True` では worker process が実体の SCPI オブジェクトを持つ。親プロセス側は worker に命令を送り、共有 state / result store から状態と結果を読む。
 
-`use_process=False` では同一プロセス内で SCPI オブジェクトを直接持つ。
+`use_process=False` では同一プロセス内で `Xdm1000Ctrl` 自身が SCPI オブジェクトを直接持つ。
 
 ## 状態・ライフサイクル
 
 ### close()
 
 接続または worker process を閉じる。
+
+`use_process=True` では worker に shutdown を送り、終了しない場合は process を terminate する。その後、manager を shutdown する。
+
+`use_process=False` では `local()` を試みた後、SCPI 接続を close する。
 
 ### disconnect()
 
@@ -49,15 +94,27 @@ Xdm1000Ctrl(
 
 現在状態を dict として返す。
 
+`use_process=True` では共有 state に `process_alive` を追加して返す。
+
+`use_process=False` では direct 用状態に `process_alive=False` を追加して返す。
+
 主なキーは以下である。
 
 ```python
 {
     "worker_alive": True,
     "process_alive": True,
+    "port": "/dev/cu.usbserial-10",
+    "baudrate": 115200,
     "running": False,
     "job_id": None,
     "job_type": None,
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+    "traceback": None,
+    "message": "worker_ready",
+    "args": {},
     "mode": "voltage_dc",
     "range_value": 10,
     "auto_range": False,
@@ -65,18 +122,44 @@ Xdm1000Ctrl(
     "continue_interval": 0.1,
     "continue_duration": 10.0,
     "continue_count": None,
-    "error": None,
-    "traceback": None,
 }
 ```
 
+`args` は running 中の worker が受け取った引数を保持する。
+
 ### is_running()
 
-連続測定中なら True を返す。
+長時間測定中なら True を返す。
 
 ### wait_until_done(poll_interval=0.2)
 
-`running` が False になるまで待つ。
+`running` が False になるまで待つ。戻り値は終了時点の `get_state()` 相当の dict である。
+
+Args:
+
+```python
+poll_interval: float = 0.2
+```
+
+Returns:
+
+```python
+state: dict
+```
+
+## 装置識別 API
+
+### idn()
+
+`*IDN?` の応答を返す。
+
+running 中は実行できない。running 中に呼ぶと `DeviceBusyError` である。
+
+Returns:
+
+```python
+"OWON,..."
+```
 
 ## 設定 API
 
@@ -107,7 +190,22 @@ diode
 continuity
 ```
 
-SCPI 側では `FUNCtion "..."` を発行する。
+SCPI 側では、次の対応で `FUNCtion` を設定する。
+
+```text
+voltage_dc      -> VOLT
+voltage_ac      -> VOLT AC
+current_dc      -> CURR
+current_ac      -> CURR AC
+resistance      -> RES
+fresistance     -> FRES
+frequency       -> FREQ
+period          -> PER
+capacitance     -> CAP
+temperature_rtd -> TEMP
+diode           -> DIOD
+continuity      -> CONT
+```
 
 `set_mode()` を呼ぶと、以前の `range_value` と `auto_range` のキャッシュは無効化される。レンジは測定モードに依存するためである。
 
@@ -136,6 +234,8 @@ dmm.set_range("DEF")
 
 SCPI 側では `RANGE <range_value>` を発行する。呼び出し後、`auto_range` キャッシュは False になる。
 
+`set_range()` の前に `set_mode()` が必要である。
+
 Returns:
 
 ```python
@@ -156,6 +256,8 @@ enabled: bool
 
 `enabled=False` の場合、XDM1000 の SCPI には汎用の `AUTO OFF` を送らず、直近の `set_range()` で保持している手動レンジを `RANGE <range_value>` で再設定する。したがって `enabled=False` にするには、先に `set_range()` が必要である。
 
+`set_auto_range()` の前に `set_mode()` が必要である。
+
 Returns:
 
 ```python
@@ -172,7 +274,7 @@ Args:
 speed: str
 ```
 
-指定値は以下である。
+指定値は以下である。小文字を渡した場合も大文字化して扱う。
 
 ```text
 F: high speed
@@ -202,6 +304,8 @@ interval: float
 
 単位は秒である。0 以上の値を指定する。`0.0` の場合は可能な限り連続して読む。
 
+実装上は、各サンプルの測定開始時刻から次の測定開始目標時刻までの最低間隔として扱う。
+
 Returns:
 
 ```python
@@ -218,7 +322,9 @@ Args:
 duration: float | None
 ```
 
-単位は秒である。`None` で時間制限を無効化する。`duration` と `continue_count` が両方設定されている場合は、先に到達した条件で終了する。
+単位は秒である。`None` で時間制限を無効化する。`duration` に数値を指定する場合は正の値でなければならない。
+
+`duration` と `continue_count` が両方設定されている場合は、先に到達した条件で終了する。
 
 Returns:
 
@@ -236,7 +342,9 @@ Args:
 count: int | None
 ```
 
-`None` で回数制限を無効化する。`duration` と `count` が両方 None の場合、`meas_continue()` は `ValueError` である。
+`None` で回数制限を無効化する。`count` に数値を指定する場合は正の整数でなければならない。
+
+`duration` と `count` が両方 None の場合、`meas_continue()` は `ValueError` である。
 
 Returns:
 
@@ -260,6 +368,8 @@ wait: float | None = None
 
 `mode`、`range_value`、`integration_speed` は引数に持たせない。必要なら測定前に設定 API を呼ぶ。
 
+`meas()` の前に `set_mode()` が必要である。
+
 Returns:
 
 ```python
@@ -280,7 +390,7 @@ Returns:
 
 ### meas_continue(wait=None)
 
-現在設定で連続測定を開始する。
+現在設定で連続測定を開始または実行する。
 
 Args:
 
@@ -290,7 +400,19 @@ wait: float | None = None
 
 `wait` は SCPI 機能ではない。Python 側で連続測定開始前に待つ秒数である。`None` の場合は待たない。
 
-`meas_continue()` の前に、`set_continue_duration()` または `set_continue_count()` の少なくとも一方を設定する必要がある。
+`meas_continue()` の前に、少なくとも以下を設定する必要がある。
+
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_continue_duration(10.0)
+```
+
+または
+
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_continue_count(100)
+```
 
 Returns:
 
@@ -300,7 +422,7 @@ Returns:
 
 `use_process=True` では worker process が測定を継続し、呼び出し元には job_id だけ返る。結果は `get_result()` で取得する。
 
-`use_process=False` では同一プロセス内で測定ループを実行し、終了後に job_id を返す。
+`use_process=False` では同一プロセス内で測定ループを実行し、終了後に job_id を返す。したがって呼び出しは連続測定終了までブロックする。
 
 ## 結果取得 API
 
@@ -317,6 +439,22 @@ clear: bool = False
 `clear=True` の場合は、取得後に保存結果を消す。
 
 単発測定後の結果は `type="single"` である。連続測定後の結果は `type="continuous"` である。
+
+単発測定結果例:
+
+```python
+{
+    "type": "single",
+    "mode": "voltage_dc",
+    "range_value": 10,
+    "auto_range": False,
+    "integration_speed": "F",
+    "value": 1.234,
+    "host_time_start": 1710000000.0,
+    "host_time_end": 1710000000.02,
+    "read_elapsed": 0.02,
+}
+```
 
 連続測定結果例:
 
@@ -339,6 +477,8 @@ clear: bool = False
         "average": 1.24,
         "stdev_population": 0.01
     },
+    "started_at": 1710000000.0,
+    "finished_at": 1710000010.0,
     "samples": [
         {
             "index": 0,
@@ -351,4 +491,116 @@ clear: bool = False
         }
     ]
 }
+```
+
+`use_process=False` の連続測定結果では、現在の direct 実装上、`stats`、`started_at`、`finished_at` は含まれず、代わりに `count` が含まれる。
+
+## running 中の制約
+
+次の API は running 中に実行できない。
+
+```text
+idn()
+set_mode()
+set_range()
+set_auto_range()
+set_integration_speed()
+set_continue_interval()
+set_continue_duration()
+set_continue_count()
+meas()
+meas_continue()
+```
+
+running 中に呼ぶと `DeviceBusyError` が送出される。
+
+次の API は running 中でも呼べる。
+
+```text
+get_state()
+is_running()
+get_result()
+wait_until_done()
+```
+
+## FastAPI 透過 API
+
+`server_fastapi/spec.py` で公開される API は以下である。
+
+```text
+get_state
+is_running
+idn
+set_mode
+set_range
+set_auto_range
+set_integration_speed
+set_continue_interval
+set_continue_duration
+set_continue_count
+meas
+meas_continue
+get_result
+wait_until_done
+```
+
+各 API は `object_name="xdm1000"` として登録され、HTTP method は `post` である。
+
+request model は以下である。
+
+```text
+set_mode                  -> ModeRequest(mode: str)
+set_range                 -> RangeRequest(range_value: str | int | float)
+set_auto_range            -> AutoRangeRequest(enabled: bool)
+set_integration_speed     -> IntegrationSpeedRequest(speed: str)
+set_continue_interval     -> ContinueIntervalRequest(interval: float)
+set_continue_duration     -> ContinueDurationRequest(duration: float | None)
+set_continue_count        -> ContinueCountRequest(count: int | None)
+meas                      -> WaitRequest(wait: float | None)
+meas_continue             -> WaitRequest(wait: float | None)
+get_result                -> ClearRequest(clear: bool = False)
+wait_until_done           -> WaitUntilDoneRequest(poll_interval: float = 0.2)
+```
+
+## 最小使用例
+
+### 単発測定
+
+```python
+from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
+
+dmm = Xdm1000Ctrl(port="/dev/cu.usbserial-10")
+
+try:
+    dmm.set_mode("voltage_dc")
+    dmm.set_auto_range(True)
+    dmm.set_integration_speed("F")
+    result = dmm.meas()
+    print(result)
+finally:
+    dmm.close()
+```
+
+### 連続測定
+
+```python
+from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
+
+dmm = Xdm1000Ctrl(port="/dev/cu.usbserial-10")
+
+try:
+    dmm.set_mode("voltage_dc")
+    dmm.set_auto_range(True)
+    dmm.set_integration_speed("F")
+    dmm.set_continue_interval(0.1)
+    dmm.set_continue_duration(10.0)
+
+    job = dmm.meas_continue()
+    print(job)
+
+    dmm.wait_until_done()
+    result = dmm.get_result()
+    print(result)
+finally:
+    dmm.close()
 ```
