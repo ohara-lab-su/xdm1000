@@ -4,7 +4,8 @@ SERVER_PORT: 8000
 CLIENT_LOGGER_NAME: "xdm1000_client"
 SERVER_LOGGER_NAME: "xdm1000_server"
 
-PORT: "/dev/cu.usbserial-10"
+# PORT: "/dev/cu.usbserial-10"
+PORT: "com8"
 BAUDRATE: 115200
 TIMEOUT: 2.0
 
