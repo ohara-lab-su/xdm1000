@@ -15,7 +15,7 @@ import inspect
 
 class Config:
     # --- xdm1000-server
-    SERVER_HOST = "127.0.0.1"  # server
+    SERVER_IP = "127.0.0.1"  # server
     SERVER_PORT = 8000
     CLIENT_LOGGER_NAME = "xdm1000_client"
     SERVER_LOGGER_NAME = "xdm1000_server"
