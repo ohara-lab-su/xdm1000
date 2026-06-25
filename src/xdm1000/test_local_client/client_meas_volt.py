@@ -1,0 +1,18 @@
+# client_meas_volt.py（修正版）
+
+#!/usr/bin/env python3
+"""XDM1000 電圧測定サンプル"""
+
+from ese774_frame import DeviceProxy
+from xdm1000.server import SyncXdm1000Client
+
+
+def main():
+    dmm = DeviceProxy("Xdm1000Ctrl", config="xdm1000.yml", async_mode=False)
+
+    dmm.set_mode("voltage_dc")
+    print(dmm.meas())
+
+
+if __name__ == "__main__":
+    main()
