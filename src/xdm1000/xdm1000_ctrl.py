@@ -136,6 +136,7 @@ class Xdm1000Ctrl(object):
         self._continue_duration = None
         self._continue_count = None
         self._latest_result = None
+        self._direct_stop_requested = False
 
         self._direct_state = {
             "worker_alive": False,
@@ -230,6 +231,7 @@ class Xdm1000Ctrl(object):
         self._direct_state["continue_interval"] = self._continue_interval
         self._direct_state["continue_duration"] = self._continue_duration
         self._direct_state["continue_count"] = self._continue_count
+        self._direct_state["stop_requested"] = self._direct_stop_requested
         self._direct_state["worker_alive"] = self.scpi is not None
 
     def _is_running(self):
@@ -351,6 +353,38 @@ class Xdm1000Ctrl(object):
     def is_running(self):
         """長時間測定中なら True を返す。"""
         return self._is_running()
+
+    def stop(self):
+        """現在実行中の測定に停止要求を出す。
+
+        この API は即時 kill ではない。連続測定ループが次に停止要求を
+        確認した時点で終了する。停止対象がない場合は何もしない。
+        """
+        if not self._is_running():
+            return {
+                "stopping": False,
+                "running": False,
+                "message": "not running",
+            }
+
+        if self.use_process:
+            self._stop_event.set()
+            self._state["stop_requested"] = True
+            self._state["message"] = "stop requested"
+            return {
+                "stopping": True,
+                "running": True,
+                "message": "stop requested",
+            }
+
+        self._direct_stop_requested = True
+        self._direct_state["stop_requested"] = True
+        self._direct_state["message"] = "stop requested"
+        return {
+            "stopping": True,
+            "running": True,
+            "message": "stop requested",
+        }
 
     def idn(self):
         """*IDN? を返す。"""
@@ -509,6 +543,8 @@ class Xdm1000Ctrl(object):
 
     def _direct_begin_job(self, job_id, job_type):
         """direct モードの長時間測定開始状態を設定する。"""
+        self._direct_stop_requested = False
+        self._direct_state["stop_requested"] = False
         self._direct_state["running"] = True
         self._direct_state["job_id"] = job_id
         self._direct_state["job_type"] = job_type
@@ -519,6 +555,8 @@ class Xdm1000Ctrl(object):
 
     def _direct_finish_job(self):
         """direct モードの長時間測定終了状態を設定する。"""
+        self._direct_stop_requested = False
+        self._direct_state["stop_requested"] = False
         self._direct_state["running"] = False
         self._direct_state["job_id"] = None
         self._direct_state["job_type"] = None
@@ -533,6 +571,7 @@ class Xdm1000Ctrl(object):
             )
 
         if self.use_process:
+            self._stop_event.clear()
             job_id = uuid.uuid4().hex
             result = self._rpc(
                 "meas_continue",
@@ -562,6 +601,8 @@ class Xdm1000Ctrl(object):
         try:
             index = 0
             while True:
+                if self._direct_stop_requested:
+                    break
                 now = time.perf_counter()
                 if deadline is not None and now >= deadline:
                     break
@@ -588,6 +629,8 @@ class Xdm1000Ctrl(object):
                 if interval > 0.0:
                     next_target = before_perf + interval
                     while True:
+                        if self._direct_stop_requested:
+                            break
                         remain = next_target - time.perf_counter()
                         if remain <= 0.0:
                             break
