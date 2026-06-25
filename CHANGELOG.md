@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.2.0
+
+### Changed
+
+- 上位 API を全面的に見直した
+  - `set_mode()` を中心とした状態保持型 API へ整理
+  - 測定条件を ctrl / worker 間で一元管理する構成へ変更
+  - `meas()` / `meas_continue()` が保持済み設定を利用する構成へ整理
+- FastAPI 公開 API を整理
+  - request / response model を見直し、API を再構成
+  - API 名、引数、戻り値を統一した
+- worker 構造を見直した
+  - worker が設定状態を保持し、共有 state を通して ctrl と同期する構成へ変更
+  - worker の設定キャッシュを API 仕様に合わせて整理
+- client を見直した
+  - API_SPEC に合わせて Sync / Async client を整理
+  - `DeviceProxy("Xdm1000Ctrl", ...)` を正式な利用形とした
+  - `config` による接続設定を共通利用できる構成へ整理
+
+### Fixed
+
+- API 全面変更後の ctrl / worker / client 間の不整合を修正
+- Sync client が複数回 API を呼び出すと
+  `Event loop is closed`
+  および
+  `cannot reuse already awaited coroutine`
+  が発生する問題を修正
+- Sync client が専用 event loop を保持し、同一 `httpx.AsyncClient` を継続利用する構成へ修正
+- DeviceProxy(sync) 利用時の安定性を改善
+- API 変更に伴う各 example を更新
+
+### Docs
+
+- API を全面更新
+- README を API 仕様に合わせて更新
+- サンプルコードを新 API に合わせて更新
+ 
 ## v0.1.2
  
 - ドキュメント整備
