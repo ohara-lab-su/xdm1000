@@ -15,7 +15,8 @@ from xdm1000.server_fastapi.routers.xdm1000_router import Xdm1000Router
 from x_logger import XLogger
 
 # PORT = "/dev/cu.usbserial-140"
-PORT = "/dev/cu.usbserial-10"
+# PORT = "/dev/cu.usbserial-10"
+PORT = "com8"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8000
 
