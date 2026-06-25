@@ -633,7 +633,8 @@ def main(config_path="xdm1000_example.yml"):
     except Exception:
         config = None
 
-    port = "/dev/cu.usbserial-10"
+    # port = "/dev/cu.usbserial-10"
+    port = "com8"
     if config is not None:
         port = getattr(config, "PORT", port)
 
@@ -643,7 +644,10 @@ def main(config_path="xdm1000_example.yml"):
         dmm.set_mode("voltage_dc")
         dmm.set_auto_range(True)
         dmm.set_integration_speed("F")
-        print(dmm.meas())
+
+        for i in range(10):
+            print(dmm.meas())
+
     finally:
         dmm.close()
 

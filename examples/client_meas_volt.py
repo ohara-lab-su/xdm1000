@@ -11,11 +11,12 @@ PORT = 8000
 
 
 def main():
-    # dmm = SyncXdm1000Client(HOST, PORT)
-    # dmm = SyncXdm1000Client(config="xdm1000.yml")
-    dmm = DeviceProxy("Xdm1000Ctrl", config="xdm1000.yml", async_mode=False)
+    # dmm = SyncXdm1002Client(HOST, PORT)
+    # dmm = SyncXdm1002Client(config="xdm1000.yml")
+    dmm = DeviceProxy("Xdm1002Ctrl", config="xdm1000.yml", async_mode=False)
 
-    print(dmm.meas_one_shot("voltage_dc"))
+    dmm.set_mode("voltage_dc")
+    print(dmm.meas())
 
 
 if __name__ == "__main__":
