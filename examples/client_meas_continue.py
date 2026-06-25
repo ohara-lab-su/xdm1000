@@ -21,7 +21,9 @@ def main() -> None:
     dmm.set_auto_range(True)
     dmm.set_integration_speed("F")
     dmm.set_continue_interval(0.1)
-    dmm.set_continue_count(10)
+    #####
+    dmm.set_continue_count(100000)
+    #####
 
     print(dmm.meas_continue())
     print(dmm.wait_until_done())
