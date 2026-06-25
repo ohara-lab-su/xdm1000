@@ -138,6 +138,7 @@ class _Xdm1000Worker(object):
         self.state["error"] = None
         self.state["traceback"] = None
         self.state["message"] = message
+        self.state["stop_requested"] = False
         self.state["worker_alive"] = True
         self.state["port"] = self.port
         self.state["baudrate"] = self.baudrate
@@ -145,7 +146,9 @@ class _Xdm1000Worker(object):
 
     def set_running(self, job_id, job_type, args):
         """共有 state を running にする。"""
+        self.stop_event.clear()
         self.state["running"] = True
+        self.state["stop_requested"] = False
         self.state["job_id"] = job_id
         self.state["job_type"] = job_type
         self.state["started_at"] = time.time()
@@ -161,6 +164,7 @@ class _Xdm1000Worker(object):
         self.state["running"] = False
         self.state["finished_at"] = time.time()
         self.state["message"] = message
+        self.state["stop_requested"] = False
         self._publish_config_state()
 
     def fail(self, exc):
@@ -170,6 +174,7 @@ class _Xdm1000Worker(object):
         self.state["error"] = repr(exc)
         self.state["traceback"] = traceback.format_exc()
         self.state["message"] = "failed"
+        self.state["stop_requested"] = False
 
     def _publish_config_state(self):
         """現在の設定キャッシュを共有 state に反映する。"""
@@ -384,9 +389,15 @@ class _Xdm1000Worker(object):
         if duration is not None:
             deadline = t0 + float(duration)
 
+        stopped = False
         try:
             index = 0
             while True:
+                if self.stop_event.is_set():
+                    stopped = True
+                    self.state["stop_requested"] = True
+                    break
+
                 now = time.perf_counter()
                 if deadline is not None and now >= deadline:
                     break
@@ -413,15 +424,24 @@ class _Xdm1000Worker(object):
                 if interval > 0.0:
                     next_target = before["host_perf"] + interval
                     while True:
+                        if self.stop_event.is_set():
+                            stopped = True
+                            self.state["stop_requested"] = True
+                            break
+
                         remain = next_target - time.perf_counter()
                         if remain <= 0.0:
                             break
                         time.sleep(min(remain, 0.001))
 
+                    if stopped:
+                        break
+
             result = {
                 "type": "continuous",
                 "job_id": job_id,
                 "ok": True,
+                "stopped": stopped,
                 "mode": self._mode,
                 "range_value": self._range_value,
                 "auto_range": self._auto_range,
@@ -435,7 +455,10 @@ class _Xdm1000Worker(object):
                 "samples": samples,
             }
             self.result_store["result"] = result
-            self.finish("finished")
+            if stopped:
+                self.finish("stopped")
+            else:
+                self.finish("finished")
         except BaseException as exc:
             self.result_store["result"] = {
                 "type": "continuous",
