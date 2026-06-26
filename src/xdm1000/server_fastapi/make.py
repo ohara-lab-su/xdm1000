@@ -1,5 +1,8 @@
-#!/usr/bin/env python3
-"""XDM1000 server_fastapi 用 .pyi 生成スクリプトである。"""
+#!/usr/bin/env python
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 server_fastapi 用 .pyi 生成スクリプト
+"""
 
 from __future__ import annotations
 
