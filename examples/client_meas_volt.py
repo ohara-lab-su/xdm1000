@@ -7,6 +7,7 @@ XDM1000 電圧測定サンプル
 import logging
 
 from ese774_frame import DeviceProxy
+from xdm1000 import Config
 
 # DeviceProxy 登録を実行するために import する。
 import xdm1000.server_fastapi  # noqa: F401
@@ -17,10 +18,13 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 def main() -> None:
     """サーバー上の XDM1000 から DC 電圧を 1 回測定する。"""
+
+    # config = Config("xdm1000.yml")
+    config = Config("xdm1000_server1.yml")
+
     dmm = DeviceProxy(
         "Xdm1000Ctrl",
-        # config="xdm1000.yml",
-        config="xdm1000_server1.yml",
+        config=config,
         async_mode=False,
     )
 
