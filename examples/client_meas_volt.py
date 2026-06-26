@@ -3,6 +3,7 @@
 K.NAKADA, kengo.nakada@gmail.com
 XDM1000 電圧測定サンプル
 """
+
 import logging
 
 from ese774_frame import DeviceProxy
@@ -13,11 +14,13 @@ import xdm1000.server_fastapi  # noqa: F401
 # httpx のログを WARNING レベル以上にする（INFO を抑制）
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+
 def main() -> None:
     """サーバー上の XDM1000 から DC 電圧を 1 回測定する。"""
     dmm = DeviceProxy(
         "Xdm1000Ctrl",
-        config="xdm1000.yml",
+        # config="xdm1000.yml",
+        config="xdm1000_server1.yml",
         async_mode=False,
     )
 
