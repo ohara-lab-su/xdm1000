@@ -27,10 +27,7 @@ class Config:
     # --- server param
     LOGGER_LEVEL = "debug"
 
-    def __init__(
-        self,
-        yaml_path=None,
-    ):
+    def __init__(self, yaml_path=None):
         # インスタンスで使いたいときだけ、ここで個別設定
         if yaml_path:
             self._load_yaml(yaml_path=yaml_path, depth=3)
@@ -51,25 +48,22 @@ class Config:
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
-        server_host = None
-        server_ip = None
-
         for k, v in data.items():
             if k == "SERVER_HOST":
-                server_host = v
-            elif k == "SERVER_IP":
-                server_ip = v
-            elif hasattr(cls, k):
+                continue
+            if k == "SERVER_IP":
+                continue
+            if hasattr(cls, k):
                 setattr(cls, k, v)
             else:
                 print("NO SUCH VAR:", k)
 
-        if server_ip is not None:
-            cls.SERVER_HOST = server_ip
-            cls.SERVER_IP = server_ip
-        if server_host is not None:
-            cls.SERVER_HOST = server_host
-            cls.SERVER_IP = server_host
+        if "SERVER_IP" in data:
+            cls.SERVER_HOST = data["SERVER_IP"]
+            cls.SERVER_IP = data["SERVER_IP"]
+        if "SERVER_HOST" in data:
+            cls.SERVER_HOST = data["SERVER_HOST"]
+            cls.SERVER_IP = data["SERVER_HOST"]
 
     def _load_yaml(
         self,
@@ -91,23 +85,19 @@ class Config:
         print("resolved_path:", resolved_path)
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        server_host = None
-        server_ip = None
-
         for k, v in data.items():
             if k == "SERVER_HOST":
-                server_host = v
-            elif k == "SERVER_IP":
-                server_ip = v
-            else:
-                setattr(self, k, v)
+                continue
+            if k == "SERVER_IP":
+                continue
+            setattr(self, k, v)
 
-        if server_ip is not None:
-            self.SERVER_HOST = server_ip
-            self.SERVER_IP = server_ip
-        if server_host is not None:
-            self.SERVER_HOST = server_host
-            self.SERVER_IP = server_host
+        if "SERVER_IP" in data:
+            self.SERVER_HOST = data["SERVER_IP"]
+            self.SERVER_IP = data["SERVER_IP"]
+        if "SERVER_HOST" in data:
+            self.SERVER_HOST = data["SERVER_HOST"]
+            self.SERVER_IP = data["SERVER_HOST"]
 
     @staticmethod
     def _resolve_path(

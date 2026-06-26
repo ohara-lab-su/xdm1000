@@ -1,11 +1,7 @@
-#!/usr/bin/env python4
-"""XDM1001 FastAPI サーバー起動例である。"""
-
-from __future__ import annotations
+#!/usr/bin/env python3
+"""XDM1000 FastAPI サーバー起動例。"""
 
 import logging
-from types import SimpleNamespace
-
 from ese774_frame import FastApiServer
 
 from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
@@ -18,7 +14,7 @@ from x_logger import XLogger
 # # PORT = "/dev/cu.usbserial-139"
 # # PORT = "/dev/cu.usbserial-9"
 # PORT = "com8"
-# SERVER_HOST = "127.0.0.1"
+# SERVER_IP = "128.0.0.1"
 # SERVER_PORT = 8002
 
 
@@ -29,7 +25,7 @@ def main() -> None:
 
     # config = SimpleNamespace(
     #     PORT=PORT,
-    #     SERVER_HOST=SERVER_HOST,
+    #     SERVER_IP=SERVER_IP,
     #     SERVER_PORT=SERVER_PORT,
     #     SERVER_LOGGER_NAME="xdm1001.server",
     # )
@@ -47,7 +43,7 @@ def main() -> None:
     )
 
     logger.info(f"SERVER HOST = {config.SERVER_HOST}")
-    logger.info(f"SERVER PORT = {Config.SERVER_PORT}")
+    logger.info(f"SERVER PORT = {config.SERVER_PORT}")
 
     server = FastApiServer(
         device_cls=Xdm1000Ctrl,  # 制御クラス
