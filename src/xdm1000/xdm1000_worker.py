@@ -67,7 +67,6 @@ def _continuous_result(
     interval,
     duration,
     count_limit,
-    values,
     samples,
     started_at,
     finished_at=None,
@@ -400,7 +399,6 @@ class _Xdm1000Worker(object):
         self.put_ok(req_id, {"job_id": job_id})
 
         samples = []
-        values = []
         t0 = time.perf_counter()
         deadline = None
         if duration is not None:
@@ -435,7 +433,6 @@ class _Xdm1000Worker(object):
                         "t_rel_end": after["t_rel"],
                     }
                 )
-                values.append(float(value))
                 index += 1
 
                 self.result_store["result"] = _continuous_result(
@@ -449,7 +446,6 @@ class _Xdm1000Worker(object):
                     interval=interval,
                     duration=duration,
                     count_limit=count_limit,
-                    values=values,
                     samples=samples,
                     started_at=self.state.get("started_at"),
                     finished_at=None,
@@ -486,7 +482,6 @@ class _Xdm1000Worker(object):
                 interval=interval,
                 duration=duration,
                 count_limit=count_limit,
-                values=values,
                 samples=samples,
                 started_at=self.state.get("started_at"),
                 finished_at=time.time(),
