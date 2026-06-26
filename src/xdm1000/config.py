@@ -28,8 +28,12 @@ class Config:
     LOGGER_LEVEL = "debug"
 
     def __init__(self, yaml_path=None):
-        # インスタンスで使いたいときだけ、ここで個別設定
-        if yaml_path:
+        """YAML から設定を読み込む。
+
+        Args:
+            yaml_path: YAML ファイルのパス。None の場合は既定値を使う。
+        """
+        if yaml_path is not None:
             self._load_yaml(yaml_path=yaml_path, depth=3)
 
     @classmethod
@@ -48,6 +52,13 @@ class Config:
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
+        if "SERVER_HOST" in data:
+            cls.SERVER_HOST = data["SERVER_HOST"]
+            cls.SERVER_IP = data["SERVER_HOST"]
+        elif "SERVER_IP" in data:
+            cls.SERVER_HOST = data["SERVER_IP"]
+            cls.SERVER_IP = data["SERVER_IP"]
+
         for k, v in data.items():
             if k == "SERVER_HOST":
                 continue
@@ -57,13 +68,6 @@ class Config:
                 setattr(cls, k, v)
             else:
                 print("NO SUCH VAR:", k)
-
-        if "SERVER_IP" in data:
-            cls.SERVER_HOST = data["SERVER_IP"]
-            cls.SERVER_IP = data["SERVER_IP"]
-        if "SERVER_HOST" in data:
-            cls.SERVER_HOST = data["SERVER_HOST"]
-            cls.SERVER_IP = data["SERVER_HOST"]
 
     def _load_yaml(
         self,
@@ -85,19 +89,19 @@ class Config:
         print("resolved_path:", resolved_path)
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        if "SERVER_HOST" in data:
+            self.SERVER_HOST = data["SERVER_HOST"]
+            self.SERVER_IP = data["SERVER_HOST"]
+        elif "SERVER_IP" in data:
+            self.SERVER_HOST = data["SERVER_IP"]
+            self.SERVER_IP = data["SERVER_IP"]
+
         for k, v in data.items():
             if k == "SERVER_HOST":
                 continue
             if k == "SERVER_IP":
                 continue
             setattr(self, k, v)
-
-        if "SERVER_IP" in data:
-            self.SERVER_HOST = data["SERVER_IP"]
-            self.SERVER_IP = data["SERVER_IP"]
-        if "SERVER_HOST" in data:
-            self.SERVER_HOST = data["SERVER_HOST"]
-            self.SERVER_IP = data["SERVER_HOST"]
 
     @staticmethod
     def _resolve_path(
