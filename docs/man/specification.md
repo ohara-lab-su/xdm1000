@@ -1,181 +1,187 @@
-# XDM1000 / XDM1241 測定仕様と ctrl API 対応
+# XDM1241 測定仕様と ctrl API 対応
 
-本書は、XDM1000 / XDM1241 で測定時に選択できるパラメータと、`xdm1000_ctrl.py` での指定方法をまとめる。
+本書は XDM1241 で測定時に選択できる主要パラメータと、`Xdm1000Ctrl` から指定する API を対応させた一覧である。
 
-## 基本 API
+## 基本手順
 
-| 操作 | ctrl API | 備考 |
-|---|---|---|
-| 測定モード選択 | `set_mode(mode)` | 電圧、電流、抵抗などを選択する。 |
-| オートレンジ | `set_auto_range(True)` | 装置側のオートレンジを使用する。 |
-| 手動レンジ指定 | `set_range(value)` | 物理量または単位付き文字列で指定する。 |
-| SCPIレンジ番号指定 | `set_range_index(index)` | マニュアルの離散番号を直接指定する。通常は使用しない。 |
-| 測定速度指定 | `set_integration_speed(speed)` | `"F"`, `"M"`, `"S"` を指定する。 |
-| 1点測定 | `meas()` | 現在設定で測定値を取得する。 |
-| 連続測定 | `meas_continue()` | 現在設定で連続測定する。 |
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_auto_range(True)
+dmm.set_integration_speed("M")
+value = dmm.meas()
+```
 
-## レンジ指定の扱い
+手動レンジを使う場合は、`set_auto_range(True)` の代わりに `set_range()` を使う。
 
-`set_range(value)` は測定モードに応じて、指定値を SCPI の `RANGE` 離散番号へ変換する。
-
-例: `voltage_dc` で `set_range("5 V")` または `set_range(5.0)` を指定すると、内部では `RANGE 3` を送信する。
-
-SCPI の離散番号を直接指定する場合は `set_range_index(index)` を使う。
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_range(value=5.0)
+dmm.set_integration_speed("M")
+value = dmm.meas()
+```
 
 ## 測定モード
 
-| 測定対象 | ctrl mode | 手動レンジ |
+| 測定対象 | ctrl API | SCPI function |
 |---|---|---|
-| DC電圧 | `"voltage_dc"` | 対応 |
-| AC電圧 | `"voltage_ac"` | 対応 |
-| DC電流 | `"current_dc"` | 対応 |
-| AC電流 | `"current_ac"` | 対応 |
-| 2端子抵抗 | `"resistance"` | 対応 |
-| 4端子抵抗 | `"fresistance"` | 対応 |
-| 周波数 | `"frequency"` | 手動レンジなし |
-| 周期 | `"period"` | 手動レンジなし |
-| 静電容量 | `"capacitance"` | 対応 |
-| 温度 | `"temperature_rtd"` | センサ種別を選択 |
-| ダイオード | `"diode"` | 手動レンジなし |
-| 導通 | `"continuity"` | 手動レンジなし |
+| DC 電圧 | `set_mode("voltage_dc")` | `VOLT` |
+| AC 電圧 | `set_mode("voltage_ac")` | `VOLT AC` |
+| DC 電流 | `set_mode("current_dc")` | `CURR` |
+| AC 電流 | `set_mode("current_ac")` | `CURR AC` |
+| 2 線抵抗 | `set_mode("resistance")` | `RES` |
+| 4 線抵抗 | `set_mode("fresistance")` | `FRES` |
+| 周波数 | `set_mode("frequency")` | `FREQ` |
+| 周期 | `set_mode("period")` | `PER` |
+| 静電容量 | `set_mode("capacitance")` | `CAP` |
+| 温度 | `set_mode("temperature_rtd")` | `TEMP` |
+| ダイオード | `set_mode("diode")` | `DIOD` |
+| 導通 | `set_mode("continuity")` | `CONT` |
 
-## DC電圧
+## レンジ指定 API
 
-ctrl mode: `"voltage_dc"`  
-数値指定の単位: V
+手動レンジは `set_range(value=None, index=None, range_value=None)` で指定する。
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 50 mV | `0.05`, `"50 mV"` | `1` |
-| 500 mV | `0.5`, `"500 mV"` | `2` |
-| 5 V | `5.0`, `"5 V"` | `3` |
-| 50 V | `50.0`, `"50 V"` | `4` |
-| 500 V | `500.0`, `"500 V"` | `5` |
-| 1000 V | `1000.0`, `"1000 V"` | `6` |
+| 指定方法 | 意味 |
+|---|---|
+| `set_range(value=5.0)` | 物理量で指定する。電圧系では V 単位である。 |
+| `set_range(value="500 mV")` | 単位付き文字列で指定する。 |
+| `set_range(value="500mV")` | 空白なしの単位付き文字列で指定する。 |
+| `set_range(index=3)` | SCPI `RANGE` 離散番号を直接指定する。 |
 
-## AC電圧
+`value` と `index` は同時に指定しない。`range_value` は旧 API 互換用であり、`value` と同じ意味である。
 
-ctrl mode: `"voltage_ac"`  
-数値指定の単位: V
+数値 `value` の基本単位は測定モードで決まる。
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 500 mV | `0.5`, `"500 mV"` | `1` |
-| 5 V | `5.0`, `"5 V"` | `2` |
-| 50 V | `50.0`, `"50 V"` | `3` |
-| 500 V | `500.0`, `"500 V"` | `4` |
-| 750 V | `750.0`, `"750 V"` | `5` |
+| 測定モード | 数値 `value` の単位 |
+|---|---|
+| `voltage_dc`, `voltage_ac` | V |
+| `current_dc`, `current_ac` | A |
+| `resistance`, `fresistance` | Ohm |
+| `capacitance` | F |
+| `temperature_rtd` | 文字列のみ |
 
-## DC電流
+ctrl 層は `value` をモード別の離散レンジ表で検証し、SCPI 層へは `RANGE <index>` を渡す。
 
-ctrl mode: `"current_dc"`  
-数値指定の単位: A
+## DC 電圧レンジ
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 500 μA | `0.0005`, `"500 uA"` | `1` |
-| 5 mA | `0.005`, `"5 mA"` | `2` |
-| 50 mA | `0.05`, `"50 mA"` | `3` |
-| 500 mA | `0.5`, `"500 mA"` | `4` |
-| 5 A | `5.0`, `"5 A"` | `5` |
-| 10 A | `10.0`, `"10 A"` | `6` |
+`set_mode("voltage_dc")` 後に指定する。
 
-## AC電流
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 50 mV | `0.05` または `"50 mV"` / `"50mV"` | `1` |
+| 500 mV | `0.5` または `"500 mV"` / `"500mV"` | `2` |
+| 5 V | `5.0` または `"5 V"` / `"5V"` | `3` |
+| 50 V | `50.0` または `"50 V"` / `"50V"` | `4` |
+| 500 V | `500.0` または `"500 V"` / `"500V"` | `5` |
+| 1000 V | `1000.0` または `"1000 V"` / `"1000V"` | `6` |
 
-ctrl mode: `"current_ac"`  
-数値指定の単位: A
+## AC 電圧レンジ
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 500 μA | `0.0005`, `"500 uA"` | `1` |
-| 5 mA | `0.005`, `"5 mA"` | `2` |
-| 50 mA | `0.05`, `"50 mA"` | `3` |
-| 500 mA | `0.5`, `"500 mA"` | `4` |
-| 5 A | `5.0`, `"5 A"` | `5` |
-| 10 A | `10.0`, `"10 A"` | `6` |
+`set_mode("voltage_ac")` 後に指定する。
 
-## 抵抗
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 500 mV | `0.5` または `"500 mV"` / `"500mV"` | `1` |
+| 5 V | `5.0` または `"5 V"` / `"5V"` | `2` |
+| 50 V | `50.0` または `"50 V"` / `"50V"` | `3` |
+| 500 V | `500.0` または `"500 V"` / `"500V"` | `4` |
+| 750 V | `750.0` または `"750 V"` / `"750V"` | `5` |
 
-ctrl mode: `"resistance"`, `"fresistance"`  
-数値指定の単位: Ω
+## DC 電流レンジ
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 500 Ω | `500.0`, `"500 Ohm"` | `1` |
-| 5 kΩ | `5000.0`, `"5 kOhm"` | `2` |
-| 50 kΩ | `50000.0`, `"50 kOhm"` | `3` |
-| 500 kΩ | `500000.0`, `"500 kOhm"` | `4` |
-| 5 MΩ | `5000000.0`, `"5 MOhm"` | `5` |
-| 50 MΩ | `50000000.0`, `"50 MOhm"` | `6` |
+`set_mode("current_dc")` 後に指定する。
 
-## 静電容量
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 500 μA | `0.0005` または `"500 uA"` / `"500uA"` | `1` |
+| 5 mA | `0.005` または `"5 mA"` / `"5mA"` | `2` |
+| 50 mA | `0.05` または `"50 mA"` / `"50mA"` | `3` |
+| 500 mA | `0.5` または `"500 mA"` / `"500mA"` | `4` |
+| 5 A | `5.0` または `"5 A"` / `"5A"` | `5` |
+| 10 A | `10.0` または `"10 A"` / `"10A"` | `6` |
 
-ctrl mode: `"capacitance"`  
-数値指定の単位: F
+## AC 電流レンジ
 
-| レンジ | `set_range(value)` | `set_range_index(index)` |
-|---:|---|---:|
-| 50 nF | `50e-9`, `"50 nF"` | `1` |
-| 500 nF | `500e-9`, `"500 nF"` | `2` |
-| 5 μF | `5e-6`, `"5 uF"` | `3` |
-| 50 μF | `50e-6`, `"50 uF"` | `4` |
-| 500 μF | `500e-6`, `"500 uF"` | `5` |
-| 5 mF | `5e-3`, `"5 mF"` | `6` |
-| 50 mF | `50e-3`, `"50 mF"` | `7` |
+`set_mode("current_ac")` 後に指定する。
 
-## 温度
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 500 μA | `0.0005` または `"500 uA"` / `"500uA"` | `1` |
+| 5 mA | `0.005` または `"5 mA"` / `"5mA"` | `2` |
+| 50 mA | `0.05` または `"50 mA"` / `"50mA"` | `3` |
+| 500 mA | `0.5` または `"500 mA"` / `"500mA"` | `4` |
+| 5 A | `5.0` または `"5 A"` / `"5A"` | `5` |
+| 10 A | `10.0` または `"10 A"` / `"10A"` | `6` |
 
-ctrl mode: `"temperature_rtd"`
+## 抵抗レンジ
 
-| センサ | `set_range(value)` | `set_range_index(index)` |
+`set_mode("resistance")` または `set_mode("fresistance")` 後に指定する。
+
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 500 Ω | `500.0` または `"500 Ohm"` / `"500Ohm"` / `"500Ω"` | `1` |
+| 5 kΩ | `5000.0` または `"5 kOhm"` / `"5kOhm"` / `"5kΩ"` | `2` |
+| 50 kΩ | `50000.0` または `"50 kOhm"` / `"50kOhm"` / `"50kΩ"` | `3` |
+| 500 kΩ | `500000.0` または `"500 kOhm"` / `"500kOhm"` / `"500kΩ"` | `4` |
+| 5 MΩ | `5000000.0` または `"5 MOhm"` / `"5MOhm"` / `"5MΩ"` | `5` |
+| 50 MΩ | `50000000.0` または `"50 MOhm"` / `"50MOhm"` / `"50MΩ"` | `6` |
+
+## 静電容量レンジ
+
+`set_mode("capacitance")` 後に指定する。
+
+| ハードウェアレンジ | `set_range(value=...)` | `set_range(index=...)` |
+|---|---:|---:|
+| 50 nF | `50e-9` または `"50 nF"` / `"50nF"` | `1` |
+| 500 nF | `500e-9` または `"500 nF"` / `"500nF"` | `2` |
+| 5 μF | `5e-6` または `"5 uF"` / `"5uF"` | `3` |
+| 50 μF | `50e-6` または `"50 uF"` / `"50uF"` | `4` |
+| 500 μF | `500e-6` または `"500 uF"` / `"500uF"` | `5` |
+| 5 mF | `5e-3` または `"5 mF"` / `"5mF"` | `6` |
+| 50 mF | `50e-3` または `"50 mF"` / `"50mF"` | `7` |
+
+## 温度センサ選択
+
+`set_mode("temperature_rtd")` 後に指定する。
+
+| ハードウェア選択肢 | `set_range(value=...)` | `set_range(index=...)` |
 |---|---|---:|
 | KITS90 | `"KITS90"` | `1` |
 | PT100 | `"PT100"` | `2` |
 
-## 測定速度
+## オートレンジ
 
-ctrl API: `set_integration_speed(speed)`
+| API | 内容 |
+|---|---|
+| `set_auto_range(True)` | オートレンジを有効にする。 |
+| `set_auto_range(False)` | 直近の `set_range()` で保持している手動レンジを再設定する。 |
 
-| 指定値 | 装置側設定 | 測定速度 | 1回の測定時間目安 | 用途 |
+`set_auto_range(False)` の前には、少なくとも一度 `set_range()` を実行する必要がある。
+
+## 内部測定速度
+
+`set_integration_speed(speed)` で指定する。
+
+| 指定値 | ハードウェア設定 | 測定速度 | 1 回の測定時間目安 | 用途 |
 |---|---|---:|---:|---|
-| `"F"` | High speed | 65 readings/s | 約15.4 ms | 高速変化の監視 |
-| `"M"` | Middle speed | 16 readings/s | 約62.5 ms | 通常のPython測定 |
-| `"S"` | Low speed | 4 readings/s | 約250 ms | 安定値取得、ノイズ低減 |
+| `"F"` | High speed | 65 readings/s | 約 15.4 ms | 高速変化の監視 |
+| `"M"` | Middle speed | 16 readings/s | 約 62.5 ms | Python からの安定取得 |
+| `"S"` | Low speed | 4 readings/s | 約 250 ms | ノイズ低減・安定値取得 |
 
-測定速度は装置内部の更新速度である。Python からのSCPI取得周期を保証しない。
+この速度は測定器内部の測定速度であり、Python からの SCPI 取得周期を保証しない。
 
-## 使用例
+## 測定実行
 
-DC電圧、5 Vレンジ、Middle speed:
+| API | 内容 |
+|---|---|
+| `meas(wait=None)` | 現在設定で 1 回測定する。 |
+| `meas_continue(wait=None)` | 現在設定で連続測定を開始する。 |
+| `get_result(clear=False)` | 直近の測定結果を取得する。 |
 
-```python
-dmm.set_mode("voltage_dc")
-dmm.set_range("5 V")
-dmm.set_integration_speed("M")
-value = dmm.meas()
-```
+連続測定条件は次で指定する。
 
-DC電流、5 mAレンジ、Middle speed:
-
-```python
-dmm.set_mode("current_dc")
-dmm.set_range("5 mA")
-dmm.set_integration_speed("M")
-value = dmm.meas()
-```
-
-抵抗、50 kΩレンジ:
-
-```python
-dmm.set_mode("resistance")
-dmm.set_range("50 kOhm")
-value = dmm.meas()
-```
-
-SCPIレンジ番号を直接指定する場合:
-
-```python
-dmm.set_mode("voltage_dc")
-dmm.set_range_index(3)
-value = dmm.meas()
-```
+| API | 内容 |
+|---|---|
+| `set_continue_interval(interval)` | 連続測定の読み取り間隔を秒で指定する。 |
+| `set_continue_duration(duration)` | 連続測定の最大時間を秒で指定する。 |
+| `set_continue_count(count)` | 連続測定の最大点数を指定する。 |
