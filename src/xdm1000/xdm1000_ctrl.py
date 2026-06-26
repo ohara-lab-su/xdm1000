@@ -6,6 +6,7 @@
 薄いラッパであり、本ファイルで mode/range/continuous 条件を上位 API として整理する。
 """
 
+import math
 import multiprocessing as mp
 import queue
 import time
@@ -46,6 +47,46 @@ def _validate_integration_speed(speed):
             "integration_speed は 'F', 'M', 'S' のいずれかでなければならない。"
         )
     return speed
+
+
+
+
+def _continuous_result(
+    job_id,
+    ok,
+    stopped,
+    mode,
+    range_value,
+    auto_range,
+    integration_speed,
+    interval,
+    duration,
+    count_limit,
+    samples,
+    started_at,
+    finished_at=None,
+):
+    """連続測定結果 dict を作成する。
+
+    測定中も終了後も同じ構造を使う。get_result() はこの dict を返す。
+    """
+    return {
+        "type": "continuous",
+        "job_id": job_id,
+        "ok": ok,
+        "running": finished_at is None,
+        "stopped": stopped,
+        "mode": mode,
+        "range_value": range_value,
+        "auto_range": auto_range,
+        "integration_speed": integration_speed,
+        "continue_interval": interval,
+        "continue_duration": duration,
+        "continue_count": count_limit,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "samples": list(samples),
+    }
 
 
 def _worker_loop(
@@ -592,7 +633,6 @@ class Xdm1000Ctrl(object):
         duration = self._continue_duration
         count_limit = self._continue_count
         samples = []
-        values = []
         t0 = time.perf_counter()
         deadline = None
         if duration is not None:
@@ -624,8 +664,29 @@ class Xdm1000Ctrl(object):
                         "t_rel_end": after_perf - t0,
                     }
                 )
-                values.append(float(value))
                 index += 1
+
+                self._direct_result_store["result"] = _continuous_result(
+                    job_id=job_id,
+                    ok=True,
+                    stopped=False,
+                    mode=self._mode,
+                    range_value=self._range_value,
+                    auto_range=self._auto_range,
+                    integration_speed=self._integration_speed,
+                    interval=interval,
+                    duration=duration,
+                    count_limit=count_limit,
+                    samples=samples,
+                    started_at=self._direct_state.get("started_at"),
+                    finished_at=None,
+                )
+                self._latest_result = self._direct_result_store["result"]
+                self._direct_state["sample_count"] = len(samples)
+                self._direct_state["latest_value"] = value
+                self._direct_state["latest_host_time"] = after
+                self._direct_state["elapsed"] = after_perf - t0
+
                 if interval > 0.0:
                     next_target = before_perf + interval
                     while True:
@@ -635,20 +696,21 @@ class Xdm1000Ctrl(object):
                         if remain <= 0.0:
                             break
                         time.sleep(min(remain, 0.001))
-            result = {
-                "type": "continuous",
-                "job_id": job_id,
-                "ok": True,
-                "mode": self._mode,
-                "range_value": self._range_value,
-                "auto_range": self._auto_range,
-                "integration_speed": self._integration_speed,
-                "continue_interval": interval,
-                "continue_duration": duration,
-                "continue_count": count_limit,
-                "count": len(samples),
-                "samples": samples,
-            }
+            result = _continuous_result(
+                job_id=job_id,
+                ok=True,
+                stopped=self._direct_stop_requested,
+                mode=self._mode,
+                range_value=self._range_value,
+                auto_range=self._auto_range,
+                integration_speed=self._integration_speed,
+                interval=interval,
+                duration=duration,
+                count_limit=count_limit,
+                samples=samples,
+                started_at=self._direct_state.get("started_at"),
+                finished_at=time.time(),
+            )
             self._latest_result = result
             self._direct_result_store["result"] = result
             self._direct_finish_job()

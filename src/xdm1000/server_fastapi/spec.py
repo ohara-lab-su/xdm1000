@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """XDM1000 FastAPI 透過 API spec である。"""
 
-from __future__ import annotations
-
 from ese774_frame.models.api_spec import ApiSpec
 
 from xdm1000.server_fastapi.models.common import (
@@ -138,6 +136,15 @@ xdm1000_api_spec = [
         method="post",
         description="get_result(clear=False)",
         summary="直近の単発または連続測定結果を取得する",
+    ),
+    ApiSpec(
+        name="stop",
+        object_name="xdm1000",
+        request_model=None,
+        response_model=None,
+        method="post",
+        description="stop()",
+        summary="実行中の測定に停止要求を出す",
     ),
     ApiSpec(
         name="wait_until_done",
