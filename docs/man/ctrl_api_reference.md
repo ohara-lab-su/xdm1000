@@ -28,7 +28,7 @@ get_state()
 is_running()
 idn()
 set_mode(mode)
-set_range(range_value)
+set_range(value=None, index=None, range_value=None)
 set_auto_range(enabled)
 set_integration_speed(speed)
 set_continue_interval(interval)
@@ -215,31 +215,58 @@ Returns:
 {"mode": mode}
 ```
 
-### set_range(range_value)
+### set_range(value=None, index=None, range_value=None)
 
 現在の測定モードに対する手動レンジを設定する。単発測定と連続測定で共通である。
 
 Args:
 
 ```python
-range_value: str | int | float
+value: str | int | float | None
+index: int | None
+range_value: str | int | float | None
 ```
 
-例:
+`value` は物理量指定である。数値で指定した場合、単位は現在の測定モードの基本単位である。
+
+```text
+voltage_dc, voltage_ac       -> V
+current_dc, current_ac       -> A
+resistance, fresistance      -> Ohm
+capacitance                  -> F
+temperature_rtd              -> KITS90 または PT100
+```
+
+単位付き文字列は、空白あり・空白なしの両方を受け付ける。
 
 ```python
-dmm.set_range(10)
-dmm.set_range("DEF")
+dmm.set_mode("voltage_dc")
+dmm.set_range(value=5.0)        # 5 V レンジ
+dmm.set_range(value="500 mV")  # 500 mV レンジ
+dmm.set_range(value="500mV")   # 500 mV レンジ
 ```
 
-SCPI 側では `RANGE <range_value>` を発行する。呼び出し後、`auto_range` キャッシュは False になる。
+`index` は XDM1000 Programming Manual の SCPI `RANGE` 離散番号を直接指定する。
+
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_range(index=3)          # DCV 5 V レンジ
+```
+
+`value`、`index`、`range_value` は同時に指定しない。`range_value` は旧 API 互換用であり、`value` と同じ意味で扱う。
+
+ctrl 層は現在の測定モードと指定値を照合し、許可された離散レンジだけを SCPI `RANGE <index>` へ変換する。呼び出し後、`auto_range` キャッシュは False になる。
 
 `set_range()` の前に `set_mode()` が必要である。
 
 Returns:
 
 ```python
-{"range_value": range_value}
+{
+    "range_value": value | None,
+    "range_index": index,
+    "range_label": "5 V",
+}
 ```
 
 ### set_auto_range(enabled)
@@ -254,7 +281,7 @@ enabled: bool
 
 `enabled=True` の場合、SCPI 側では `AUTO` を発行する。
 
-`enabled=False` の場合、XDM1000 の SCPI には汎用の `AUTO OFF` を送らず、直近の `set_range()` で保持している手動レンジを `RANGE <range_value>` で再設定する。したがって `enabled=False` にするには、先に `set_range()` が必要である。
+`enabled=False` の場合、XDM1000 の SCPI には汎用の `AUTO OFF` を送らず、直近の `set_range()` で決定した `range_index` を `RANGE <index>` で再設定する。したがって `enabled=False` にするには、先に `set_range()` が必要である。
 
 `set_auto_range()` の前に `set_mode()` が必要である。
 
@@ -550,7 +577,7 @@ request model は以下である。
 
 ```text
 set_mode                  -> ModeRequest(mode: str)
-set_range                 -> RangeRequest(range_value: str | int | float)
+set_range                 -> RangeRequest(value: str | int | float | None, index: int | None, range_value: str | int | float | None)
 set_auto_range            -> AutoRangeRequest(enabled: bool)
 set_integration_speed     -> IntegrationSpeedRequest(speed: str)
 set_continue_interval     -> ContinueIntervalRequest(interval: float)

@@ -58,7 +58,7 @@ get_state()
 is_running()
 idn()
 set_mode(mode)
-set_range(range_value)
+set_range(value=None, index=None, range_value=None)
 set_auto_range(enabled)
 set_integration_speed(speed)
 set_continue_interval(interval)
@@ -218,6 +218,28 @@ continuity      -> CONT
 ```
 
 未対応の mode を指定すると `ValueError` である。
+
+
+## 手動レンジ
+
+`set_range(value=None, index=None, range_value=None)` は、現在の測定モードに対する手動レンジを設定する。
+
+`value` は物理量指定である。数値で指定した場合、単位は現在の測定モードの基本単位である。電圧系は V、電流系は A、抵抗系は Ohm、静電容量は F である。
+
+```python
+dmm.set_mode("voltage_dc")
+dmm.set_range(value=5.0)
+dmm.set_range(value="500 mV")
+dmm.set_range(value="500mV")
+```
+
+`index` は SCPI `RANGE` 離散番号を直接指定する。
+
+```python
+dmm.set_range(index=3)
+```
+
+`value`、`index`、`range_value` は同時に指定しない。`range_value` は旧 API 互換用であり、`value` と同じ意味で扱う。
 
 ## 内部測定速度
 
