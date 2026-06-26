@@ -1,5 +1,3 @@
-# xdm1000/config.py
-
 """
 Kengo NAKADA:
 https://github.com/shimane-dev, https://github.com/kengo-nakada

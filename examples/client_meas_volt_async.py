@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""XDM1000 電圧測定 async サンプルである。"""
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 電圧測定 async サンプル
+"""
 
 from __future__ import annotations
 

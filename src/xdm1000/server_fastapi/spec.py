@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""XDM1000 FastAPI 透過 API spec である。"""
+"""
+XDM1000 FastAPI 透過 API spec
+K.NAKADA, kengo.nakada@gmail.com
+"""
 
 from typing import Optional, Union
-
 from pydantic import BaseModel
-
 from ese774_frame.models.api_spec import ApiSpec
-
 from xdm1000.server_fastapi.models.common import (
     AutoRangeRequest,
     BoolResponse,

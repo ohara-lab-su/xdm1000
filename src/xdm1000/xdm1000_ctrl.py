@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """OWON XDM1000 / XDM1241 用の上位制御クラスである。
+K.NAKADA, kengo.nakada@gmail.com
 
 このファイルは利用者向けの測定器 API を提供する。SCPI 層は SCPI コマンドの
 薄いラッパであり、本ファイルで mode/range/continuous 条件を上位 API として整理する。
 """
 
+from typing import Dict
 import math
 import multiprocessing as mp
 import queue
@@ -142,17 +144,40 @@ _UNIT_FACTORS = {
 
 
 def _normalize_unit_text(text):
-    """単位文字列を内部比較用に正規化する。"""
+    """単位文字列を内部比較用に正規化する。
+
+    Args:
+        text: 正規化対象の単位文字列である。
+
+    Returns:
+        空白を除去し、マイクロ記号を統一し、小文字化した文字列である。
+    """
     return str(text).strip().replace(" ", "").replace("μ", "µ").lower()
 
 
 def _float_equal(a, b):
-    """レンジ表の離散値比較を行う。"""
+    """レンジ表の離散値比較を行う。
+
+    Args:
+        a: 比較対象の数値である。
+        b: 比較対象の数値である。
+
+    Returns:
+        浮動小数点誤差を許容して一致するとき True を返す。
+    """
     return math.isclose(float(a), float(b), rel_tol=1.0e-9, abs_tol=1.0e-15)
 
 
 def _format_range_choices(mode):
-    """エラーメッセージ用に有効レンジ一覧を返す。"""
+    """エラーメッセージ用に有効レンジ一覧を返す。
+
+    Args:
+        mode: ctrl API 上の測定モード名である。
+
+    Returns:
+        有効なレンジラベルをカンマ区切りにした文字列である。
+        モードがレンジ表にない場合は空文字列を返す。
+    """
     spec = RANGE_SPECS.get(mode)
     if spec is None:
         return ""
@@ -165,11 +190,25 @@ def _parse_range_quantity(mode, range_value):
     数値は現在の測定モードの基本単位として扱う。電圧系では V、
     電流系では A、抵抗系では Ohm、静電容量では F である。
     単位付き文字列は "500 mV" と "500mV" の両方を受け付ける。
+
+    Args:
+        mode: ctrl API 上の測定モード名である。
+        range_value: レンジ指定である。数値、単位付き文字列、または
+            temperature_rtd 用センサー名を受け付ける。
+
+    Returns:
+        RANGE 番号と表示用レンジラベルの 2 要素 tuple である。
+
+    Raises:
+        ValueError: 測定モードが未設定、未対応、またはレンジ指定が
+            現在モードの離散レンジに一致しない場合に送出する。
     """
     if mode is None:
         raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
     if mode not in RANGE_SPECS:
-        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+        raise ValueError(
+            "この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode)
+        )
 
     spec = RANGE_SPECS[mode]
     expected_unit = spec["unit"]
@@ -180,7 +219,9 @@ def _parse_range_quantity(mode, range_value):
             if value == str(sensor).upper():
                 return index, label
         raise ValueError(
-            "temperature_rtd のレンジは KITS90 または PT100 で指定する: {0!r}".format(range_value)
+            "temperature_rtd のレンジは KITS90 または PT100 で指定する: {0!r}".format(
+                range_value
+            )
         )
 
     value = range_value
@@ -201,7 +242,9 @@ def _parse_range_quantity(mode, range_value):
                 try:
                     value = float(number_text)
                 except ValueError:
-                    raise ValueError("レンジ指定を解釈できない: {0!r}".format(range_value))
+                    raise ValueError(
+                        "レンジ指定を解釈できない: {0!r}".format(range_value)
+                    )
             else:
                 canonical_unit, factor = _UNIT_FACTORS[_normalize_unit_text(unit_text)]
                 if canonical_unit != expected_unit:
@@ -231,7 +274,9 @@ def _parse_range_quantity(mode, range_value):
 
     if unit != expected_unit:
         raise ValueError(
-            "{0} モードでは {1} 単位のレンジを指定する必要がある。".format(mode, expected_unit)
+            "{0} モードでは {1} 単位のレンジを指定する必要がある。".format(
+                mode, expected_unit
+            )
         )
 
     value = float(value)
@@ -247,42 +292,78 @@ def _parse_range_quantity(mode, range_value):
 
 
 def _validate_range_index(mode, range_index):
-    """SCPI RANGE 番号を現在モードの範囲で検証する。"""
+    """SCPI RANGE 番号を現在モードの範囲で検証する。
+
+    Args:
+        mode: ctrl API 上の測定モード名である。
+        range_index: 検証対象の RANGE 番号である。
+
+    Returns:
+        RANGE 番号と表示用レンジラベルの 2 要素 tuple である。
+
+    Raises:
+        ValueError: 測定モードが未設定、未対応、または RANGE 番号が
+            現在モードの範囲外である場合に送出する。
+    """
     if mode is None:
         raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
     if mode not in RANGE_SPECS:
-        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+        raise ValueError(
+            "この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode)
+        )
     try:
         index = int(range_index)
     except Exception:
-        raise ValueError("range_index は整数でなければならない: {0!r}".format(range_index))
+        raise ValueError(
+            "range_index は整数でなければならない: {0!r}".format(range_index)
+        )
     for item_index, physical_value, label in RANGE_SPECS[mode]["items"]:
         if index == item_index:
             return index, label
     raise ValueError(
         "{0} モードの RANGE 番号が範囲外である。指定値={1!r}, 有効値={2}".format(
-            mode, range_index, ", ".join([str(item[0]) for item in RANGE_SPECS[mode]["items"]])
+            mode,
+            range_index,
+            ", ".join([str(item[0]) for item in RANGE_SPECS[mode]["items"]]),
         )
     )
 
 
 def _validate_mode(mode):
-    """ctrl API の mode 名を SCPI FUNCtion パラメータへ変換する。"""
+    """ctrl API の mode 名を SCPI FUNCtion パラメータへ変換する。
+
+    Args:
+        mode: ctrl API 上の測定モード名である。
+
+    Returns:
+        SCPI FUNCtion に渡す関数名である。
+
+    Raises:
+        ValueError: 未対応の測定モードが指定された場合に送出する。
+    """
     if mode not in MODE_TO_SCPI_FUNCTION:
         raise ValueError("未対応の測定モードである: {0!r}".format(mode))
     return MODE_TO_SCPI_FUNCTION[mode]
 
 
 def _validate_integration_speed(speed):
-    """XDM1000 の RATE パラメータを検証する。"""
+    """XDM1000 の RATE パラメータを検証する。
+
+    Args:
+        speed: 積分速度である。F、M、S のいずれかを指定する。
+
+    Returns:
+        大文字化した積分速度文字列である。
+
+    Raises:
+        ValueError: F、M、S 以外が指定された場合に送出する。
+    """
     speed = str(speed).upper()
     if speed not in ("F", "M", "S"):
         raise ValueError(
             "integration_speed は 'F', 'M', 'S' のいずれかでなければならない。"
         )
     return speed
-
-
 
 
 def _continuous_result(
@@ -305,6 +386,27 @@ def _continuous_result(
     """連続測定結果 dict を作成する。
 
     測定中も終了後も同じ構造を使う。get_result() はこの dict を返す。
+    finished_at が None の間は running=True として扱う。
+
+    Args:
+        job_id: 連続測定ジョブを識別する ID である。
+        ok: 測定結果が正常であるかどうかを表す。
+        stopped: stop() により停止されたかどうかを表す。
+        mode: 測定モード名である。
+        range_value: 利用者が指定した物理量レンジである。
+        range_index: SCPI RANGE 番号である。
+        range_label: 表示用レンジラベルである。
+        auto_range: オートレンジ状態である。
+        integration_speed: 積分速度である。
+        interval: 連続測定の測定間隔である。
+        duration: 連続測定の最大測定時間である。
+        count_limit: 連続測定の最大測定回数である。
+        samples: 測定サンプル列である。
+        started_at: 測定開始時刻である。
+        finished_at: 測定終了時刻である。None の場合は測定中である。
+
+    Returns:
+        単発測定と区別可能な連続測定結果 dict である。
     """
     return {
         "type": "continuous",
@@ -340,7 +442,21 @@ def _worker_loop(
     log_level=None,
     config=None,
 ):
-    """測定ワーカープロセスの entry point である。"""
+    """測定ワーカープロセスの entry point である。
+
+    Args:
+        command_q: 親プロセスから worker へ送るコマンドキューである。
+        response_q: worker から親プロセスへ返す応答キューである。
+        state: worker の状態を共有する dict である。
+        result_store: 直近測定結果を共有する dict である。
+        stop_event: 連続測定停止要求を共有するイベントである。
+        port: シリアルポート名である。
+        timeout: シリアル通信タイムアウトである。
+        baudrate: シリアル通信速度である。
+        logger: worker へ渡す logger である。
+        log_level: logger が未指定の場合に使うログレベルである。
+        config: 設定オブジェクトである。
+    """
     worker = _Xdm1000Worker(
         command_q=command_q,
         response_q=response_q,
@@ -370,7 +486,13 @@ class DeviceWorkerError(RuntimeError):
 
 
 class Xdm1000Ctrl(object):
-    """XDM1000 / XDM1241 を測定器として扱う上位制御クラスである。"""
+    """XDM1000 / XDM1241 を測定器として扱う上位制御クラスである。
+
+    SCPI の薄いラッパではなく、測定モード、レンジ、積分速度、
+    連続測定条件を保持する利用者向け API を提供する。use_process=True
+    では worker プロセスを介して測定器へアクセスし、use_process=False
+    では同一プロセス内で SCPI クラスを直接使う。
+    """
 
     def __init__(
         self,
@@ -382,7 +504,25 @@ class Xdm1000Ctrl(object):
         config=None,
         use_process=True,
     ):
-        """上位制御クラスを初期化する。"""
+        """上位制御クラスを初期化する。
+
+        Args:
+            port: シリアルポート名である。config が指定されている場合は
+                config.PORT が優先される。
+            timeout: シリアル通信タイムアウトである。
+            baudrate: シリアル通信速度である。
+            logger: 利用する logger である。None の場合は標準 logging から
+                モジュール logger を作成する。
+            log_level: logger 作成時に使うログレベルである。
+            config: 設定オブジェクトである。指定時は PORT、TIMEOUT、
+                BAUDRATE をこのオブジェクトから取得する。
+            use_process: True の場合は worker プロセス経由、False の場合は
+                direct SCPI モードで動作する。
+
+        Raises:
+            ValueError: port が指定されず、config からも取得できない場合に
+                送出する。
+        """
         if logger is None:
             import logging
 
@@ -395,6 +535,7 @@ class Xdm1000Ctrl(object):
         self.config = config
         self.use_process = bool(use_process)
 
+        # config が指定された場合は、コンストラクタ引数より config 側の値を優先する。
         if self.config is not None:
             port = getattr(self.config, "PORT", port)
             timeout = getattr(self.config, "TIMEOUT", timeout)
@@ -419,6 +560,7 @@ class Xdm1000Ctrl(object):
         self._latest_result = None
         self._direct_stop_requested = False
 
+        # use_process=False では Manager を使わないため、同等の状態を通常 dict に保持する。
         self._direct_state = {
             "worker_alive": False,
             "port": self.port,
@@ -432,8 +574,9 @@ class Xdm1000Ctrl(object):
             "traceback": None,
             "message": "direct_scpi_mode",
         }
-        self._direct_result_store = {"result": None}
+        self._direct_result_store = {"result": None}  # type: Dict[str, object]
 
+        # use_process=True 用のプロセス間共有オブジェクトである。
         self.scpi = None
         self._manager = None
         self._state = None
@@ -445,6 +588,7 @@ class Xdm1000Ctrl(object):
         self._process = None
 
         if self.use_process:
+            # 測定器アクセスを worker に集約し、親側からは RPC 風に操作する。
             self._manager = mp.Manager()
             self._state = self._manager.dict()
             self._result_store = self._manager.dict()
@@ -474,6 +618,7 @@ class Xdm1000Ctrl(object):
             self._process.start()
             self._wait_worker_ready()
         else:
+            # direct SCPI モードでは同一プロセス内で測定器へ直接アクセスする。
             self.scpi = Xdm1000Scpi(
                 port=self.port,
                 timeout=self.timeout,
@@ -486,7 +631,16 @@ class Xdm1000Ctrl(object):
             self._publish_direct_state()
 
     def _wait_worker_ready(self, timeout=5.0, poll_interval=0.05):
-        """worker 起動完了または起動失敗を待つ。"""
+        """worker 起動完了または起動失敗を待つ。
+
+        Args:
+            timeout: 起動完了を待つ最大秒数である。
+            poll_interval: 共有 state を確認する間隔である。
+
+        Raises:
+            RuntimeError: worker が起動失敗または起動直後に終了した場合に送出する。
+            TimeoutError: timeout 以内に worker_alive が立たない場合に送出する。
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._state.get("worker_alive", False):
@@ -504,7 +658,11 @@ class Xdm1000Ctrl(object):
         raise TimeoutError("worker 起動 timeout")
 
     def _publish_direct_state(self):
-        """direct モードの設定状態を state に反映する。"""
+        """direct モードの設定状態を state に反映する。
+
+        use_process=False では worker 共有 state が存在しないため、
+        get_state() が返す状態を _direct_state に集約する。
+        """
         self._direct_state["mode"] = self._mode
         self._direct_state["range_value"] = self._range_value
         self._direct_state["range_index"] = getattr(self, "_range_index", None)
@@ -518,13 +676,21 @@ class Xdm1000Ctrl(object):
         self._direct_state["worker_alive"] = self.scpi is not None
 
     def _is_running(self):
-        """長時間測定中かどうかを返す。"""
+        """長時間測定中かどうかを返す。
+
+        Returns:
+            連続測定ジョブが実行中なら True を返す。
+        """
         if self.use_process:
             return bool(self._state.get("running", False))
         return bool(self._direct_state.get("running", False))
 
     def _require_not_running(self):
-        """測定中なら設定変更や単発測定を拒否する。"""
+        """測定中なら設定変更や単発測定を拒否する。
+
+        Raises:
+            DeviceBusyError: 連続測定中に競合する操作が要求された場合に送出する。
+        """
         if self._is_running():
             state = self.get_state()
             raise DeviceBusyError(
@@ -535,11 +701,27 @@ class Xdm1000Ctrl(object):
             )
 
     def _rpc(self, name, args=None, timeout=None):
-        """親プロセスから測定ワーカーへ 1 コマンドを送る。"""
+        """親プロセスから測定ワーカーへ 1 コマンドを送る。
+
+        Args:
+            name: worker に送るコマンド名である。
+            args: worker コマンドへ渡す引数 dict である。
+            timeout: 応答待ちの最大秒数である。None の場合は無期限に待つ。
+
+        Returns:
+            worker が返した result である。
+
+        Raises:
+            RuntimeError: direct モードで呼ばれた場合、または応答 ID が
+                一致しない場合に送出する。
+            TimeoutError: worker 応答が timeout 以内に返らない場合に送出する。
+            DeviceWorkerError: worker 側で例外が発生した場合に送出する。
+        """
         if not self.use_process:
             raise RuntimeError("use_process=False では _rpc は使わない。")
 
         req_id = uuid.uuid4().hex
+        # 同時 RPC で response_q の応答対応が崩れないよう、親側で 1 本化する。
         with self._rpc_lock:
             self._command_q.put({"req_id": req_id, "cmd": name, "args": args or {}})
             if timeout is None:
@@ -559,6 +741,7 @@ class Xdm1000Ctrl(object):
                 except queue.Empty:
                     raise TimeoutError("worker 応答待ち timeout: {0!r}".format(name))
                 if response.get("req_id") != req_id:
+                    # 想定外の応答順序は、キュー対応関係の破綻として扱う。
                     raise RuntimeError(
                         "worker response の req_id が一致しない: {0!r}".format(response)
                     )
@@ -572,7 +755,11 @@ class Xdm1000Ctrl(object):
                 )
 
     def _sync_from_worker_state(self):
-        """worker 共有 state を親側キャッシュへ反映する。"""
+        """worker 共有 state を親側キャッシュへ反映する。
+
+        worker 側で確定した測定モード、レンジ、積分速度、連続測定条件、
+        直近結果を親側属性へ同期する。direct モードでは何もしない。
+        """
         if not self.use_process:
             return
         self._mode = self._state.get("mode")
@@ -592,7 +779,12 @@ class Xdm1000Ctrl(object):
             raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
 
     def close(self):
-        """接続または worker を閉じる。"""
+        """接続または worker を閉じる。
+
+        worker プロセス利用時は shutdown RPC を試み、応答しない場合は
+        terminate する。direct モードでは測定器を local に戻してから
+        シリアル接続を閉じる。
+        """
         if self.use_process:
             if self._process is not None and self._process.is_alive():
                 try:
@@ -626,7 +818,12 @@ class Xdm1000Ctrl(object):
         self.close()
 
     def get_state(self):
-        """現在の状態を返す。"""
+        """現在の状態を返す。
+
+        Returns:
+            測定モード、レンジ、連続測定状態、worker 生存状態などを含む
+            状態 dict である。
+        """
         if self.use_process:
             state = dict(self._state)
             state["process_alive"] = self._process.is_alive()
@@ -672,7 +869,14 @@ class Xdm1000Ctrl(object):
         }
 
     def idn(self):
-        """*IDN? を返す。"""
+        """*IDN? を返す。
+
+        Returns:
+            測定器が返す識別文字列である。
+
+        Raises:
+            DeviceBusyError: 連続測定中に呼ばれた場合に送出する。
+        """
         self._require_not_running()
         if self.use_process:
             return self._rpc("idn", timeout=5.0)
@@ -698,7 +902,18 @@ class Xdm1000Ctrl(object):
         return None
 
     def set_mode(self, mode):
-        """測定モードを設定する。"""
+        """測定モードを設定する。
+
+        Args:
+            mode: ctrl API 上の測定モード名である。
+
+        Returns:
+            設定した測定モードを含む dict、または worker 側 result である。
+
+        Raises:
+            ValueError: 未対応の測定モードが指定された場合に送出する。
+            DeviceBusyError: 連続測定中に呼ばれた場合に送出する。
+        """
         self._require_not_running()
         _validate_mode(mode)
         if self.use_process:
@@ -726,6 +941,7 @@ class Xdm1000Ctrl(object):
         """
         self._require_not_running()
 
+        # value/range_value は物理量指定、index は RANGE 番号直接指定であり、混在させない。
         specified = []
         if value is not None:
             specified.append("value")
@@ -734,7 +950,9 @@ class Xdm1000Ctrl(object):
         if range_value is not None:
             specified.append("range_value")
         if len(specified) != 1:
-            raise ValueError("set_range() は value, index, range_value のいずれか1つだけを指定する。")
+            raise ValueError(
+                "set_range() は value, index, range_value のいずれか1つだけを指定する。"
+            )
 
         mode = self._mode
         if index is not None:
@@ -747,6 +965,7 @@ class Xdm1000Ctrl(object):
             stored_value = value
 
         if self.use_process:
+            # worker 側 SCPI API は RANGE 番号で設定するため、親側で物理量を番号へ解決してから送る。
             result = self._rpc("set_range", {"range_value": range_index}, timeout=10.0)
             self._range_value = stored_value
             self._range_index = range_index
@@ -773,7 +992,19 @@ class Xdm1000Ctrl(object):
         }
 
     def set_auto_range(self, enabled):
-        """オートレンジを設定する。"""
+        """オートレンジを設定する。
+
+        Args:
+            enabled: True の場合はオートレンジを有効にし、False の場合は
+                現在保持している手動レンジへ戻す。
+
+        Returns:
+            オートレンジ状態を含む dict、または worker 側 result である。
+
+        Raises:
+            ValueError: 手動レンジ未設定の状態で False が指定された場合に送出する。
+            DeviceBusyError: 連続測定中に呼ばれた場合に送出する。
+        """
         self._require_not_running()
         if self.use_process:
             return self._rpc("set_auto_range", {"enabled": bool(enabled)}, timeout=10.0)
@@ -902,8 +1133,24 @@ class Xdm1000Ctrl(object):
         self._direct_state["finished_at"] = time.time()
 
     def meas_continue(self, wait=None):
-        """現在設定で連続測定する。"""
+        """現在設定で連続測定する。
+
+        set_continue_duration() または set_continue_count() で設定された終了条件に
+        到達するまで、現在の測定モードで繰り返し測定する。direct モードでは
+        同期的に測定ループを実行し、測定中の途中結果も result store に反映する。
+
+        Args:
+            wait: 測定開始前に待つ秒数である。None の場合は待たない。
+
+        Returns:
+            連続測定ジョブ ID を含む dict、または worker 側 result である。
+
+        Raises:
+            ValueError: 連続測定の終了条件が未設定の場合に送出する。
+            DeviceBusyError: 既に測定中の場合に送出する。
+        """
         self._require_not_running()
+        # duration と count のどちらも未設定の場合、終了条件がないため連続測定を開始しない。
         if self._continue_duration is None and self._continue_count is None:
             raise ValueError(
                 "meas_continue() の前に set_continue_duration() または set_continue_count() を設定する必要がある。"
@@ -933,6 +1180,7 @@ class Xdm1000Ctrl(object):
         samples = []
         t0 = time.perf_counter()
         deadline = None
+        # duration は perf_counter 基準で判定し、システム時刻変更の影響を避ける。
         if duration is not None:
             deadline = t0 + float(duration)
 
@@ -964,6 +1212,7 @@ class Xdm1000Ctrl(object):
                 )
                 index += 1
 
+                # 測定中でも get_result() から途中結果を取得できるよう、サンプルごとに更新する。
                 self._direct_result_store["result"] = _continuous_result(
                     job_id=job_id,
                     ok=True,
@@ -988,6 +1237,7 @@ class Xdm1000Ctrl(object):
                 self._direct_state["elapsed"] = after_perf - t0
 
                 if interval > 0.0:
+                    # 測定開始時刻を基準に次回タイミングを作り、読み取り時間分の遅れを抑える。
                     next_target = before_perf + interval
                     while True:
                         if self._direct_stop_requested:
@@ -996,6 +1246,7 @@ class Xdm1000Ctrl(object):
                         if remain <= 0.0:
                             break
                         time.sleep(min(remain, 0.001))
+            # ループ終了時は finished_at を入れ、running=False の結果として保存する。
             result = _continuous_result(
                 job_id=job_id,
                 ok=True,
@@ -1025,7 +1276,14 @@ class Xdm1000Ctrl(object):
             raise
 
     def get_result(self, clear=False):
-        """直近の単発測定または連続測定結果を返す。"""
+        """直近の単発測定または連続測定結果を返す。
+
+        Args:
+            clear: True の場合は、取得後に result store を None に戻す。
+
+        Returns:
+            直近の測定結果 dict である。結果がまだない場合は None を返す。
+        """
         if self.use_process:
             result = self._result_store.get("result")
             if clear:
@@ -1039,7 +1297,14 @@ class Xdm1000Ctrl(object):
         return result
 
     def wait_until_done(self, poll_interval=0.2):
-        """running が終わるまで待つ。"""
+        """running が終わるまで待つ。
+
+        Args:
+            poll_interval: get_state() を呼び直す間隔である。
+
+        Returns:
+            running が False になった時点の状態 dict である。
+        """
         while True:
             state = self.get_state()
             if not state.get("running", False):
@@ -1048,7 +1313,11 @@ class Xdm1000Ctrl(object):
 
 
 def main(config_path="xdm1000_example.yml"):
-    """ctrl クラス単独の動作確認用サンプルである。"""
+    """ctrl クラス単独の動作確認用サンプルである。
+
+    Args:
+        config_path: 動作確認に使う設定ファイルパスである。
+    """
     config = None
     try:
         config = Config(config_path)

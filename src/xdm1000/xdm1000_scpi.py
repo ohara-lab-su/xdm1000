@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """OWON XDM1241 / XDM1000 系デジタルマルチメータ用 SCPI ラッパである。
+K.NAKADA, kengo.nakada@gmail.com
 
 このファイルは pyserial 経由で USB-Serial 接続された XDM1241 に SCPI を送る。
 XDM1041 / XDM2041 用として公開されている XDM1000 Series Programming Manual に
