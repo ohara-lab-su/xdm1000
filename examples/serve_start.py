@@ -18,7 +18,7 @@ from x_logger import XLogger
 # # PORT = "/dev/cu.usbserial-139"
 # # PORT = "/dev/cu.usbserial-9"
 # PORT = "com8"
-# SERVER_IP = "128.0.0.1"
+# SERVER_HOST = "128.0.0.1"
 # SERVER_PORT = 8002
 
 
@@ -29,13 +29,14 @@ def main() -> None:
 
     # config = SimpleNamespace(
     #     PORT=PORT,
-    #     SERVER_IP=SERVER_IP,
+    #     SERVER_HOST=SERVER_HOST,
     #     SERVER_PORT=SERVER_PORT,
     #     SERVER_LOGGER_NAME="xdm1001.server",
     # )
 
     ################
-    config = Config("xdm1000.yml")
+    # config = Config("xdm1000.yml")
+    config = Config("xdm1000_server1.yml")
     ################
 
     logger = XLogger(
@@ -46,8 +47,8 @@ def main() -> None:
         log_name=f"{config.SERVER_LOGGER_NAME}.log",
     )
 
-    logger.info(f"SERVER IP = {Config.SERVER_IP}")
-    logger.info(f"SERVER PORT = {Config.SERVER_PORT}")
+    logger.info(f"SERVER HOST = {config.SERVER_HOST}")
+    logger.info(f"SERVER PORT = {config.SERVER_PORT}")
 
     server = FastApiServer(
         device_cls=Xdm1000Ctrl,  # 制御クラス
@@ -62,7 +63,7 @@ def main() -> None:
         lifespan_msg_prefix="XDM1000",
     )
     server.run(
-        host=config.SERVER_IP,
+        host=config.SERVER_HOST,
         port=config.SERVER_PORT,
         reload=False,
     )
