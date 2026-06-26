@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""XDM1000 連続測定サンプルである。"""
-
-from __future__ import annotations
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 連続測定サンプル。
+"""
+import logging
 
 from ese774_frame import DeviceProxy
 
 # DeviceProxy 登録を実行するために import する。
 import xdm1000.server_fastapi  # noqa: F401
 
+# httpx のログを WARNING レベル以上にする（INFO を抑制）
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 def main() -> None:
     """サーバー上の XDM1000 から DC 電圧を連続測定する。"""
