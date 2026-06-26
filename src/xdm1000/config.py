@@ -13,7 +13,8 @@ import inspect
 
 class Config:
     # --- xdm1000-server
-    SERVER_IP = "127.0.0.1"  # server
+    SERVER_HOST = "127.0.0.1"  # server
+    SERVER_IP = SERVER_HOST  # backward compatible alias
     SERVER_PORT = 8000
     CLIENT_LOGGER_NAME = "xdm1000_client"
     SERVER_LOGGER_NAME = "xdm1000_server"
@@ -26,7 +27,10 @@ class Config:
     # --- server param
     LOGGER_LEVEL = "debug"
 
-    def __init__(self, yaml_path=None):
+    def __init__(
+        self,
+        yaml_path=None,
+    ):
         # インスタンスで使いたいときだけ、ここで個別設定
         if yaml_path:
             self._load_yaml(yaml_path=yaml_path, depth=3)
@@ -47,11 +51,25 @@ class Config:
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
+        server_host = None
+        server_ip = None
+
         for k, v in data.items():
-            if hasattr(cls, k):
+            if k == "SERVER_HOST":
+                server_host = v
+            elif k == "SERVER_IP":
+                server_ip = v
+            elif hasattr(cls, k):
                 setattr(cls, k, v)
             else:
                 print("NO SUCH VAR:", k)
+
+        if server_ip is not None:
+            cls.SERVER_HOST = server_ip
+            cls.SERVER_IP = server_ip
+        if server_host is not None:
+            cls.SERVER_HOST = server_host
+            cls.SERVER_IP = server_host
 
     def _load_yaml(
         self,
@@ -73,8 +91,23 @@ class Config:
         print("resolved_path:", resolved_path)
         with open(resolved_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        server_host = None
+        server_ip = None
+
         for k, v in data.items():
-            setattr(self, k, v)
+            if k == "SERVER_HOST":
+                server_host = v
+            elif k == "SERVER_IP":
+                server_ip = v
+            else:
+                setattr(self, k, v)
+
+        if server_ip is not None:
+            self.SERVER_HOST = server_ip
+            self.SERVER_IP = server_ip
+        if server_host is not None:
+            self.SERVER_HOST = server_host
+            self.SERVER_IP = server_host
 
     @staticmethod
     def _resolve_path(
