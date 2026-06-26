@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """XDM1000 FastAPI 透過 API spec である。"""
 
+from typing import Optional, Union
+
+from pydantic import BaseModel
+
 from ese774_frame.models.api_spec import ApiSpec
 
 from xdm1000.server_fastapi.models.common import (
@@ -12,11 +16,18 @@ from xdm1000.server_fastapi.models.common import (
     ContinueIntervalRequest,
     IntegrationSpeedRequest,
     ModeRequest,
-    RangeRequest,
     StringResponse,
     WaitRequest,
     WaitUntilDoneRequest,
 )
+
+
+class RangeRequest(BaseModel):
+    """set_range() 用の要求モデルである。"""
+
+    value: Optional[Union[str, int, float]] = None
+    index: Optional[int] = None
+    range_value: Optional[Union[str, int, float]] = None
 
 
 xdm1000_api_spec = [
@@ -62,8 +73,8 @@ xdm1000_api_spec = [
         request_model=RangeRequest,
         response_model=None,
         method="post",
-        description="set_range(range_value)",
-        summary="測定レンジを設定する",
+        description="set_range(value=None, index=None, range_value=None)",
+        summary="測定レンジを物理量または離散番号で設定する",
     ),
     ApiSpec(
         name="set_auto_range",

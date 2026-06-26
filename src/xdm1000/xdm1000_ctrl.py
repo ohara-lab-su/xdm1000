@@ -160,10 +160,11 @@ def _format_range_choices(mode):
 
 
 def _parse_range_quantity(mode, range_value):
-    """上位 API のレンジ指定を SCPI RANGE 番号へ変換する。
+    """上位 API の物理量レンジ指定を SCPI RANGE 番号へ変換する。
 
-    set_range() は物理量または単位付き文字列を受け取る。SCPI の離散番号を
-    直接指定したい場合は set_range_index() を使う。
+    数値は現在の測定モードの基本単位として扱う。電圧系では V、
+    電流系では A、抵抗系では Ohm、静電容量では F である。
+    単位付き文字列は "500 mV" と "500mV" の両方を受け付ける。
     """
     if mode is None:
         raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
@@ -187,7 +188,7 @@ def _parse_range_quantity(mode, range_value):
 
     if isinstance(range_value, str):
         text = range_value.strip()
-        parts = text.replace("Ω", " Ohm").split()
+        parts = text.split()
         if len(parts) == 1:
             number_text = parts[0]
             unit_text = None
@@ -711,24 +712,48 @@ class Xdm1000Ctrl(object):
         self._publish_direct_state()
         return {"mode": mode}
 
-    def set_range(self, range_value):
-        """現在の測定モードに対する手動レンジを物理量で設定する。
+    def set_range(self, value=None, index=None, range_value=None):
+        """現在の測定モードに対する手動レンジを設定する。
 
-        range_value は現在の測定モードの単位で指定する。例として、
-        voltage_dc では 5.0 または "5 V" が 5 V レンジを表す。
-        SCPI の RANGE 番号を直接指定する場合は set_range_index() を使う。
+        value は物理量指定である。数値は現在の測定モードの基本単位として
+        扱う。電圧系では V、電流系では A、抵抗系では Ohm、静電容量では
+        F である。単位付き文字列は "500 mV" と "500mV" の両方を
+        受け付ける。
+
+        index は SCPI RANGE 離散番号を直接指定する。value、index、
+        range_value は同時に指定できない。range_value は旧 API 互換の
+        物理量指定であり、value と同じ意味で扱う。
         """
         self._require_not_running()
+
+        specified = []
+        if value is not None:
+            specified.append("value")
+        if index is not None:
+            specified.append("index")
+        if range_value is not None:
+            specified.append("range_value")
+        if len(specified) != 1:
+            raise ValueError("set_range() は value, index, range_value のいずれか1つだけを指定する。")
+
         mode = self._mode
-        range_index, range_label = _parse_range_quantity(mode, range_value)
+        if index is not None:
+            range_index, range_label = _validate_range_index(mode, index)
+            stored_value = None
+        else:
+            if range_value is not None:
+                value = range_value
+            range_index, range_label = _parse_range_quantity(mode, value)
+            stored_value = value
+
         if self.use_process:
             result = self._rpc("set_range", {"range_value": range_index}, timeout=10.0)
-            self._range_value = range_value
+            self._range_value = stored_value
             self._range_index = range_index
             self._range_label = range_label
             self._auto_range = False
             return {
-                "range_value": range_value,
+                "range_value": stored_value,
                 "range_index": range_index,
                 "range_label": range_label,
                 "auto_range": False,
@@ -736,44 +761,16 @@ class Xdm1000Ctrl(object):
             }
         self._require_mode_direct()
         self.scpi.set_range(range_index)
-        self._range_value = range_value
+        self._range_value = stored_value
         self._range_index = range_index
         self._range_label = range_label
         self._auto_range = False
         self._publish_direct_state()
-        return {"range_value": range_value, "range_index": range_index, "range_label": range_label}
-
-    def set_range_index(self, range_index=None, range_value=None):
-        """現在の測定モードに対する SCPI RANGE 番号を明示的に設定する。
-
-        FastAPI 透過層で既存の RangeRequest を流用する場合に備え、
-        range_value キーで渡された値も RANGE 番号として受け付ける。
-        """
-        self._require_not_running()
-        if range_index is None:
-            range_index = range_value
-        mode = self._mode
-        index, range_label = _validate_range_index(mode, range_index)
-        if self.use_process:
-            result = self._rpc("set_range", {"range_value": index}, timeout=10.0)
-            self._range_value = None
-            self._range_index = index
-            self._range_label = range_label
-            self._auto_range = False
-            return {
-                "range_index": index,
-                "range_label": range_label,
-                "auto_range": False,
-                "worker_result": result,
-            }
-        self._require_mode_direct()
-        self.scpi.set_range(index)
-        self._range_value = None
-        self._range_index = index
-        self._range_label = range_label
-        self._auto_range = False
-        self._publish_direct_state()
-        return {"range_index": index, "range_label": range_label}
+        return {
+            "range_value": stored_value,
+            "range_index": range_index,
+            "range_label": range_label,
+        }
 
     def set_auto_range(self, enabled):
         """オートレンジを設定する。"""
@@ -787,7 +784,7 @@ class Xdm1000Ctrl(object):
         else:
             if self._range_index is None:
                 raise ValueError(
-                    "auto_range=False にするには、先に set_range() または set_range_index() で手動レンジを設定する必要がある。"
+                    "auto_range=False にするには、先に set_range() で手動レンジを設定する必要がある。"
                 )
             self.scpi.set_range(self._range_index)
             self._auto_range = False
