@@ -80,3 +80,10 @@ class AsyncXdm1000Client(AsyncDeviceClient):
             await asyncio.sleep(poll_interval)
 
         return await self.get_state()
+
+    async def wait_until_done(self, poll_interval=0.2):
+        """クライアント側で running が False になるまで待つ。"""
+        while await self.is_running():
+            await asyncio.sleep(poll_interval)
+
+        return await self.get_state()
