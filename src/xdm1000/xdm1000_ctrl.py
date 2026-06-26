@@ -32,6 +32,239 @@ MODE_TO_SCPI_FUNCTION = {
 }
 
 
+RANGE_SPECS = {
+    "voltage_dc": {
+        "unit": "V",
+        "items": [
+            (1, 0.05, "50 mV"),
+            (2, 0.5, "500 mV"),
+            (3, 5.0, "5 V"),
+            (4, 50.0, "50 V"),
+            (5, 500.0, "500 V"),
+            (6, 1000.0, "1000 V"),
+        ],
+    },
+    "voltage_ac": {
+        "unit": "V",
+        "items": [
+            (1, 0.5, "500 mV"),
+            (2, 5.0, "5 V"),
+            (3, 50.0, "50 V"),
+            (4, 500.0, "500 V"),
+            (5, 750.0, "750 V"),
+        ],
+    },
+    "current_dc": {
+        "unit": "A",
+        "items": [
+            (1, 0.0005, "500 uA"),
+            (2, 0.005, "5 mA"),
+            (3, 0.05, "50 mA"),
+            (4, 0.5, "500 mA"),
+            (5, 5.0, "5 A"),
+            (6, 10.0, "10 A"),
+        ],
+    },
+    "current_ac": {
+        "unit": "A",
+        "items": [
+            (1, 0.0005, "500 uA"),
+            (2, 0.005, "5 mA"),
+            (3, 0.05, "50 mA"),
+            (4, 0.5, "500 mA"),
+            (5, 5.0, "5 A"),
+            (6, 10.0, "10 A"),
+        ],
+    },
+    "resistance": {
+        "unit": "Ohm",
+        "items": [
+            (1, 500.0, "500 Ohm"),
+            (2, 5000.0, "5 kOhm"),
+            (3, 50000.0, "50 kOhm"),
+            (4, 500000.0, "500 kOhm"),
+            (5, 5000000.0, "5 MOhm"),
+            (6, 50000000.0, "50 MOhm"),
+        ],
+    },
+    "fresistance": {
+        "unit": "Ohm",
+        "items": [
+            (1, 500.0, "500 Ohm"),
+            (2, 5000.0, "5 kOhm"),
+            (3, 50000.0, "50 kOhm"),
+            (4, 500000.0, "500 kOhm"),
+            (5, 5000000.0, "5 MOhm"),
+            (6, 50000000.0, "50 MOhm"),
+        ],
+    },
+    "capacitance": {
+        "unit": "F",
+        "items": [
+            (1, 50e-9, "50 nF"),
+            (2, 500e-9, "500 nF"),
+            (3, 5e-6, "5 uF"),
+            (4, 50e-6, "50 uF"),
+            (5, 500e-6, "500 uF"),
+            (6, 5e-3, "5 mF"),
+            (7, 50e-3, "50 mF"),
+        ],
+    },
+    "temperature_rtd": {
+        "unit": "sensor",
+        "items": [
+            (1, "KITS90", "KITS90"),
+            (2, "PT100", "PT100"),
+        ],
+    },
+}
+
+_UNIT_FACTORS = {
+    "v": ("V", 1.0),
+    "mv": ("V", 1.0e-3),
+    "a": ("A", 1.0),
+    "ma": ("A", 1.0e-3),
+    "ua": ("A", 1.0e-6),
+    "µa": ("A", 1.0e-6),
+    "ohm": ("Ohm", 1.0),
+    "ohms": ("Ohm", 1.0),
+    "Ω": ("Ohm", 1.0),
+    "kohm": ("Ohm", 1.0e3),
+    "kω": ("Ohm", 1.0e3),
+    "mohm": ("Ohm", 1.0e6),
+    "mω": ("Ohm", 1.0e6),
+    "f": ("F", 1.0),
+    "mf": ("F", 1.0e-3),
+    "uf": ("F", 1.0e-6),
+    "µf": ("F", 1.0e-6),
+    "nf": ("F", 1.0e-9),
+}
+
+
+def _normalize_unit_text(text):
+    """単位文字列を内部比較用に正規化する。"""
+    return str(text).strip().replace(" ", "").replace("μ", "µ").lower()
+
+
+def _float_equal(a, b):
+    """レンジ表の離散値比較を行う。"""
+    return math.isclose(float(a), float(b), rel_tol=1.0e-9, abs_tol=1.0e-15)
+
+
+def _format_range_choices(mode):
+    """エラーメッセージ用に有効レンジ一覧を返す。"""
+    spec = RANGE_SPECS.get(mode)
+    if spec is None:
+        return ""
+    return ", ".join([item[2] for item in spec["items"]])
+
+
+def _parse_range_quantity(mode, range_value):
+    """上位 API のレンジ指定を SCPI RANGE 番号へ変換する。
+
+    set_range() は物理量または単位付き文字列を受け取る。SCPI の離散番号を
+    直接指定したい場合は set_range_index() を使う。
+    """
+    if mode is None:
+        raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
+    if mode not in RANGE_SPECS:
+        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+
+    spec = RANGE_SPECS[mode]
+    expected_unit = spec["unit"]
+
+    if expected_unit == "sensor":
+        value = str(range_value).strip().upper().replace(" ", "")
+        for index, sensor, label in spec["items"]:
+            if value == str(sensor).upper():
+                return index, label
+        raise ValueError(
+            "temperature_rtd のレンジは KITS90 または PT100 で指定する: {0!r}".format(range_value)
+        )
+
+    value = range_value
+    unit = expected_unit
+
+    if isinstance(range_value, str):
+        text = range_value.strip()
+        parts = text.replace("Ω", " Ohm").split()
+        if len(parts) == 1:
+            number_text = parts[0]
+            unit_text = None
+            for suffix in sorted(_UNIT_FACTORS.keys(), key=len, reverse=True):
+                if _normalize_unit_text(number_text).endswith(suffix):
+                    unit_text = suffix
+                    number_text = number_text[: -len(suffix)]
+                    break
+            if unit_text is None:
+                try:
+                    value = float(number_text)
+                except ValueError:
+                    raise ValueError("レンジ指定を解釈できない: {0!r}".format(range_value))
+            else:
+                canonical_unit, factor = _UNIT_FACTORS[_normalize_unit_text(unit_text)]
+                if canonical_unit != expected_unit:
+                    raise ValueError(
+                        "{0} モードでは {1} 単位のレンジを指定する必要がある: {2!r}".format(
+                            mode, expected_unit, range_value
+                        )
+                    )
+                value = float(number_text) * factor
+                unit = canonical_unit
+        elif len(parts) == 2:
+            value = float(parts[0])
+            unit_key = _normalize_unit_text(parts[1])
+            if unit_key not in _UNIT_FACTORS:
+                raise ValueError("未対応のレンジ単位である: {0!r}".format(parts[1]))
+            canonical_unit, factor = _UNIT_FACTORS[unit_key]
+            if canonical_unit != expected_unit:
+                raise ValueError(
+                    "{0} モードでは {1} 単位のレンジを指定する必要がある: {2!r}".format(
+                        mode, expected_unit, range_value
+                    )
+                )
+            value = value * factor
+            unit = canonical_unit
+        else:
+            raise ValueError("レンジ指定を解釈できない: {0!r}".format(range_value))
+
+    if unit != expected_unit:
+        raise ValueError(
+            "{0} モードでは {1} 単位のレンジを指定する必要がある。".format(mode, expected_unit)
+        )
+
+    value = float(value)
+    for index, physical_value, label in spec["items"]:
+        if _float_equal(value, physical_value):
+            return index, label
+
+    raise ValueError(
+        "{0} モードのレンジは離散値のみ指定できる。指定値={1!r}, 有効値={2}".format(
+            mode, range_value, _format_range_choices(mode)
+        )
+    )
+
+
+def _validate_range_index(mode, range_index):
+    """SCPI RANGE 番号を現在モードの範囲で検証する。"""
+    if mode is None:
+        raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
+    if mode not in RANGE_SPECS:
+        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+    try:
+        index = int(range_index)
+    except Exception:
+        raise ValueError("range_index は整数でなければならない: {0!r}".format(range_index))
+    for item_index, physical_value, label in RANGE_SPECS[mode]["items"]:
+        if index == item_index:
+            return index, label
+    raise ValueError(
+        "{0} モードの RANGE 番号が範囲外である。指定値={1!r}, 有効値={2}".format(
+            mode, range_index, ", ".join([str(item[0]) for item in RANGE_SPECS[mode]["items"]])
+        )
+    )
+
+
 def _validate_mode(mode):
     """ctrl API の mode 名を SCPI FUNCtion パラメータへ変換する。"""
     if mode not in MODE_TO_SCPI_FUNCTION:
@@ -57,6 +290,8 @@ def _continuous_result(
     stopped,
     mode,
     range_value,
+    range_index,
+    range_label,
     auto_range,
     integration_speed,
     interval,
@@ -78,6 +313,8 @@ def _continuous_result(
         "stopped": stopped,
         "mode": mode,
         "range_value": range_value,
+        "range_index": range_index,
+        "range_label": range_label,
         "auto_range": auto_range,
         "integration_speed": integration_speed,
         "continue_interval": interval,
@@ -171,6 +408,8 @@ class Xdm1000Ctrl(object):
 
         self._mode = None
         self._range_value = None
+        self._range_index = None
+        self._range_label = None
         self._auto_range = None
         self._integration_speed = None
         self._continue_interval = 0.0
@@ -267,6 +506,8 @@ class Xdm1000Ctrl(object):
         """direct モードの設定状態を state に反映する。"""
         self._direct_state["mode"] = self._mode
         self._direct_state["range_value"] = self._range_value
+        self._direct_state["range_index"] = getattr(self, "_range_index", None)
+        self._direct_state["range_label"] = getattr(self, "_range_label", None)
         self._direct_state["auto_range"] = self._auto_range
         self._direct_state["integration_speed"] = self._integration_speed
         self._direct_state["continue_interval"] = self._continue_interval
@@ -335,6 +576,8 @@ class Xdm1000Ctrl(object):
             return
         self._mode = self._state.get("mode")
         self._range_value = self._state.get("range_value")
+        self._range_index = self._state.get("range_index")
+        self._range_label = self._state.get("range_label")
         self._auto_range = self._state.get("auto_range")
         self._integration_speed = self._state.get("integration_speed")
         self._continue_interval = self._state.get("continue_interval", 0.0)
@@ -444,6 +687,8 @@ class Xdm1000Ctrl(object):
         self.scpi.reset()
         self._mode = None
         self._range_value = None
+        self._range_index = None
+        self._range_label = None
         self._auto_range = None
         self._integration_speed = None
         self._latest_result = None
@@ -460,21 +705,75 @@ class Xdm1000Ctrl(object):
         self.scpi.set_function(MODE_TO_SCPI_FUNCTION[mode])
         self._mode = mode
         self._range_value = None
+        self._range_index = None
+        self._range_label = None
         self._auto_range = None
         self._publish_direct_state()
         return {"mode": mode}
 
     def set_range(self, range_value):
-        """現在の測定モードに対する測定レンジを設定する。"""
+        """現在の測定モードに対する手動レンジを物理量で設定する。
+
+        range_value は現在の測定モードの単位で指定する。例として、
+        voltage_dc では 5.0 または "5 V" が 5 V レンジを表す。
+        SCPI の RANGE 番号を直接指定する場合は set_range_index() を使う。
+        """
         self._require_not_running()
+        mode = self._mode
+        range_index, range_label = _parse_range_quantity(mode, range_value)
         if self.use_process:
-            return self._rpc("set_range", {"range_value": range_value}, timeout=10.0)
+            result = self._rpc("set_range", {"range_value": range_index}, timeout=10.0)
+            self._range_value = range_value
+            self._range_index = range_index
+            self._range_label = range_label
+            self._auto_range = False
+            return {
+                "range_value": range_value,
+                "range_index": range_index,
+                "range_label": range_label,
+                "auto_range": False,
+                "worker_result": result,
+            }
         self._require_mode_direct()
-        self.scpi.set_range(range_value)
+        self.scpi.set_range(range_index)
         self._range_value = range_value
+        self._range_index = range_index
+        self._range_label = range_label
         self._auto_range = False
         self._publish_direct_state()
-        return {"range_value": range_value}
+        return {"range_value": range_value, "range_index": range_index, "range_label": range_label}
+
+    def set_range_index(self, range_index=None, range_value=None):
+        """現在の測定モードに対する SCPI RANGE 番号を明示的に設定する。
+
+        FastAPI 透過層で既存の RangeRequest を流用する場合に備え、
+        range_value キーで渡された値も RANGE 番号として受け付ける。
+        """
+        self._require_not_running()
+        if range_index is None:
+            range_index = range_value
+        mode = self._mode
+        index, range_label = _validate_range_index(mode, range_index)
+        if self.use_process:
+            result = self._rpc("set_range", {"range_value": index}, timeout=10.0)
+            self._range_value = None
+            self._range_index = index
+            self._range_label = range_label
+            self._auto_range = False
+            return {
+                "range_index": index,
+                "range_label": range_label,
+                "auto_range": False,
+                "worker_result": result,
+            }
+        self._require_mode_direct()
+        self.scpi.set_range(index)
+        self._range_value = None
+        self._range_index = index
+        self._range_label = range_label
+        self._auto_range = False
+        self._publish_direct_state()
+        return {"range_index": index, "range_label": range_label}
 
     def set_auto_range(self, enabled):
         """オートレンジを設定する。"""
@@ -486,11 +785,11 @@ class Xdm1000Ctrl(object):
             self.scpi.set_auto_range(True)
             self._auto_range = True
         else:
-            if self._range_value is None:
+            if self._range_index is None:
                 raise ValueError(
-                    "auto_range=False にするには、先に set_range() で手動レンジを設定する必要がある。"
+                    "auto_range=False にするには、先に set_range() または set_range_index() で手動レンジを設定する必要がある。"
                 )
-            self.scpi.set_range(self._range_value)
+            self.scpi.set_range(self._range_index)
             self._auto_range = False
         self._publish_direct_state()
         return {"auto_range": self._auto_range}
@@ -571,6 +870,8 @@ class Xdm1000Ctrl(object):
             "type": "single",
             "mode": self._mode,
             "range_value": self._range_value,
+            "range_index": self._range_index,
+            "range_label": self._range_label,
             "auto_range": self._auto_range,
             "integration_speed": self._integration_speed,
             "value": value,
@@ -672,6 +973,8 @@ class Xdm1000Ctrl(object):
                     stopped=False,
                     mode=self._mode,
                     range_value=self._range_value,
+                    range_index=self._range_index,
+                    range_label=self._range_label,
                     auto_range=self._auto_range,
                     integration_speed=self._integration_speed,
                     interval=interval,
@@ -702,6 +1005,8 @@ class Xdm1000Ctrl(object):
                 stopped=self._direct_stop_requested,
                 mode=self._mode,
                 range_value=self._range_value,
+                range_index=self._range_index,
+                range_label=self._range_label,
                 auto_range=self._auto_range,
                 integration_speed=self._integration_speed,
                 interval=interval,
