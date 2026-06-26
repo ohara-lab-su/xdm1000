@@ -3,6 +3,7 @@
 
 import time
 from ese774_frame import DeviceProxy
+import xdm1000.server_fastapi
 
 dmm = DeviceProxy(
     "Xdm1000Ctrl",
