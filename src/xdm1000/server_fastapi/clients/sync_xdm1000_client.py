@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""XDM1000 用 sync client である。"""
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 用 sync client
+"""
 
 import time
 

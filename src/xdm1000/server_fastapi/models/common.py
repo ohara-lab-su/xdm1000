@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""XDM1000 FastAPI 用 Pydantic model 群である。"""
-
-from __future__ import annotations
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 FastAPI 用 Pydantic model 群
+"""
 
 from typing import Any, Dict, Optional, Union
-
 from pydantic import BaseModel
 
 ScpiValue = Union[str, int, float]

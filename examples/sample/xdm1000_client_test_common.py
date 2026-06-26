@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""XDM1000 ctrl sync test 共通関数である。"""
+"""XDM1000 ctrl sync test 共通関数"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import xdm1000.server_fastapi  # noqa: F401
 
 
 def make_dmm():
-    """sync DeviceProxy を生成する。"""
+    """sync DeviceProxy を生成"""
     return DeviceProxy(
         "Xdm1000Ctrl",
         config="xdm1000.yml",
@@ -22,18 +22,20 @@ def make_dmm():
 
 
 def show(title, value):
-    """見出し付きで値を表示する。"""
+    """見出し付きで値を表示"""
     print("")
     print("== {0} ==".format(title))
     pprint.pprint(value, width=120)
 
 
 def require_single_result(result, expected_mode):
-    """単発測定結果の基本形を検査する。"""
+    """単発測定結果の基本形を検査"""
     if not isinstance(result, dict):
         raise AssertionError("result が dict ではない。")
     if result.get("type") != "single":
-        raise AssertionError("type が single ではない: {0!r}".format(result.get("type")))
+        raise AssertionError(
+            "type が single ではない: {0!r}".format(result.get("type"))
+        )
     if result.get("mode") != expected_mode:
         raise AssertionError("mode が一致しない: {0!r}".format(result.get("mode")))
     if "value" not in result:
@@ -41,11 +43,13 @@ def require_single_result(result, expected_mode):
 
 
 def require_continuous_result(result, expected_mode):
-    """連続測定結果の基本形を検査する。"""
+    """連続測定結果の基本形を検査"""
     if not isinstance(result, dict):
         raise AssertionError("result が dict ではない。")
     if result.get("type") != "continuous":
-        raise AssertionError("type が continuous ではない: {0!r}".format(result.get("type")))
+        raise AssertionError(
+            "type が continuous ではない: {0!r}".format(result.get("type"))
+        )
     if result.get("mode") != expected_mode:
         raise AssertionError("mode が一致しない: {0!r}".format(result.get("mode")))
     if "samples" not in result:
@@ -53,7 +57,7 @@ def require_continuous_result(result, expected_mode):
 
 
 def configure_single(dmm, mode, range_value=None, auto_range=True, speed="F"):
-    """単発測定に必要な設定を行う。"""
+    """単発測定に必要な設定を行う"""
     show("set_mode", dmm.set_mode(mode))
     if auto_range:
         show("set_auto_range(True)", dmm.set_auto_range(True))
@@ -63,7 +67,7 @@ def configure_single(dmm, mode, range_value=None, auto_range=True, speed="F"):
 
 
 def measure_single(dmm, mode, wait=None):
-    """単発測定を実行し、結果の基本形を検査する。"""
+    """単発測定を実行し、結果の基本形を検査"""
     result = dmm.meas(wait=wait)
     show("meas", result)
     require_single_result(result, mode)
@@ -72,7 +76,7 @@ def measure_single(dmm, mode, wait=None):
 
 
 def run_voltage_dc_single(range_value=None, auto_range=True, speed="F"):
-    """DC 電圧の単発測定を行う。"""
+    """DC 電圧の単発測定"""
     dmm = make_dmm()
     configure_single(
         dmm=dmm,
@@ -85,7 +89,7 @@ def run_voltage_dc_single(range_value=None, auto_range=True, speed="F"):
 
 
 def wait_job_and_get_result(dmm, poll_interval=0.05):
-    """連続測定の完了を待ち、結果を取得する。"""
+    """連続測定の完了を待ち、結果を取得"""
     show("is_running before wait", dmm.is_running())
     state = dmm.wait_until_done(poll_interval=poll_interval)
     show("wait_until_done", state)
@@ -96,5 +100,5 @@ def wait_job_and_get_result(dmm, poll_interval=0.05):
 
 
 def sleep_briefly():
-    """running 状態確認用に短時間待つ。"""
+    """running 状態確認用に短時間待つ"""
     time.sleep(0.1)
