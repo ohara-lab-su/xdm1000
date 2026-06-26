@@ -76,3 +76,10 @@ class SyncXdm1000Client(SyncDeviceClient):
             time.sleep(poll_interval)
 
         return self.get_state()
+
+    def wait_until_done(self, poll_interval=0.2):
+        """クライアント側で running が False になるまで待つ。"""
+        while self.is_running():
+            time.sleep(poll_interval)
+
+        return self.get_state()
