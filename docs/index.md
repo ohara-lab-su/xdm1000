@@ -8,6 +8,7 @@ OWON XDM1000/XDM1241 系デジタルマルチメータ用の SCPI ドライバ�
 :caption: Contents:
 
 api/modules
+man/specifications
 man/tutorial
 man/architecture
 man/design_policy
@@ -23,6 +24,7 @@ man/implementation_notes
 
 ## 構成
 
+- [仕様書](man/specification.md)
 - [チュートリアル](man/tutorial.md)
 - [システム構成](man/architecture.md)
 - [設計方針](man/design_policy.md)
