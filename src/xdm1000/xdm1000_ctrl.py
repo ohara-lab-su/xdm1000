@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """OWON XDM1000 / XDM1241 用の上位制御クラスである。
+K.NAKADA, kengo.nakada@gmail.com
 
 このファイルは利用者向けの測定器 API を提供する。SCPI 層は SCPI コマンドの
 薄いラッパであり、本ファイルで mode/range/continuous 条件を上位 API として整理する。

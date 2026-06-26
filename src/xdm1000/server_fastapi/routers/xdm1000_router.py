@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""XDM1000 用 FastAPI router である。"""
-
-from __future__ import annotations
+"""
+K.NAKADA, kengo.nakada@gmail.com
+XDM1000 用 FastAPI router
+"""
 
 from typing import Any, Optional
-
 from ese774_frame.routers.device_router import DeviceRouter
 
 
