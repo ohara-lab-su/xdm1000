@@ -62,7 +62,6 @@ def _continuous_result(
     interval,
     duration,
     count_limit,
-    values,
     samples,
     started_at,
     finished_at=None,
@@ -634,7 +633,6 @@ class Xdm1000Ctrl(object):
         duration = self._continue_duration
         count_limit = self._continue_count
         samples = []
-        values = []
         t0 = time.perf_counter()
         deadline = None
         if duration is not None:
@@ -666,7 +664,6 @@ class Xdm1000Ctrl(object):
                         "t_rel_end": after_perf - t0,
                     }
                 )
-                values.append(float(value))
                 index += 1
 
                 self._direct_result_store["result"] = _continuous_result(
@@ -680,7 +677,6 @@ class Xdm1000Ctrl(object):
                     interval=interval,
                     duration=duration,
                     count_limit=count_limit,
-                    values=values,
                     samples=samples,
                     started_at=self._direct_state.get("started_at"),
                     finished_at=None,
@@ -711,7 +707,6 @@ class Xdm1000Ctrl(object):
                 interval=interval,
                 duration=duration,
                 count_limit=count_limit,
-                values=values,
                 samples=samples,
                 started_at=self._direct_state.get("started_at"),
                 finished_at=time.time(),
