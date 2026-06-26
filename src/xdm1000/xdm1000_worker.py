@@ -55,29 +55,6 @@ def _sample_clock(t0_perf):
     }
 
 
-def _calc_stats(values):
-    """測定値列の基本統計量を返す。"""
-    if not values:
-        return {
-            "count": 0,
-            "minimum": None,
-            "maximum": None,
-            "average": None,
-            "stdev_population": None,
-        }
-
-    count = len(values)
-    average = sum(values) / float(count)
-    variance = sum((x - average) ** 2 for x in values) / float(count)
-    return {
-        "count": count,
-        "minimum": min(values),
-        "maximum": max(values),
-        "average": average,
-        "stdev_population": math.sqrt(variance),
-    }
-
-
 
 def _continuous_result(
     job_id,
@@ -112,7 +89,6 @@ def _continuous_result(
         "continue_interval": interval,
         "continue_duration": duration,
         "continue_count": count_limit,
-        "stats": _calc_stats(values),
         "started_at": started_at,
         "finished_at": finished_at,
         "samples": list(samples),
