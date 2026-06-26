@@ -31,7 +31,8 @@ def main() -> None:
     # )
 
     ################
-    config = Config("xdm1000.yml")
+    # config = Config("xdm1000.yml")
+    config = Config("xdm1000_server1.yml")
     ################
 
     logger = XLogger(
