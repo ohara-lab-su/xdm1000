@@ -6,6 +6,7 @@
 薄いラッパであり、本ファイルで mode/range/continuous 条件を上位 API として整理する。
 """
 
+from typing import Dict
 import math
 import multiprocessing as mp
 import queue
@@ -169,7 +170,9 @@ def _parse_range_quantity(mode, range_value):
     if mode is None:
         raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
     if mode not in RANGE_SPECS:
-        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+        raise ValueError(
+            "この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode)
+        )
 
     spec = RANGE_SPECS[mode]
     expected_unit = spec["unit"]
@@ -180,7 +183,9 @@ def _parse_range_quantity(mode, range_value):
             if value == str(sensor).upper():
                 return index, label
         raise ValueError(
-            "temperature_rtd のレンジは KITS90 または PT100 で指定する: {0!r}".format(range_value)
+            "temperature_rtd のレンジは KITS90 または PT100 で指定する: {0!r}".format(
+                range_value
+            )
         )
 
     value = range_value
@@ -201,7 +206,9 @@ def _parse_range_quantity(mode, range_value):
                 try:
                     value = float(number_text)
                 except ValueError:
-                    raise ValueError("レンジ指定を解釈できない: {0!r}".format(range_value))
+                    raise ValueError(
+                        "レンジ指定を解釈できない: {0!r}".format(range_value)
+                    )
             else:
                 canonical_unit, factor = _UNIT_FACTORS[_normalize_unit_text(unit_text)]
                 if canonical_unit != expected_unit:
@@ -231,7 +238,9 @@ def _parse_range_quantity(mode, range_value):
 
     if unit != expected_unit:
         raise ValueError(
-            "{0} モードでは {1} 単位のレンジを指定する必要がある。".format(mode, expected_unit)
+            "{0} モードでは {1} 単位のレンジを指定する必要がある。".format(
+                mode, expected_unit
+            )
         )
 
     value = float(value)
@@ -251,17 +260,23 @@ def _validate_range_index(mode, range_index):
     if mode is None:
         raise ValueError("先に set_mode() で測定モードを設定する必要がある。")
     if mode not in RANGE_SPECS:
-        raise ValueError("この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode))
+        raise ValueError(
+            "この測定モードは手動レンジ設定に対応していない: {0!r}".format(mode)
+        )
     try:
         index = int(range_index)
     except Exception:
-        raise ValueError("range_index は整数でなければならない: {0!r}".format(range_index))
+        raise ValueError(
+            "range_index は整数でなければならない: {0!r}".format(range_index)
+        )
     for item_index, physical_value, label in RANGE_SPECS[mode]["items"]:
         if index == item_index:
             return index, label
     raise ValueError(
         "{0} モードの RANGE 番号が範囲外である。指定値={1!r}, 有効値={2}".format(
-            mode, range_index, ", ".join([str(item[0]) for item in RANGE_SPECS[mode]["items"]])
+            mode,
+            range_index,
+            ", ".join([str(item[0]) for item in RANGE_SPECS[mode]["items"]]),
         )
     )
 
@@ -281,8 +296,6 @@ def _validate_integration_speed(speed):
             "integration_speed は 'F', 'M', 'S' のいずれかでなければならない。"
         )
     return speed
-
-
 
 
 def _continuous_result(
@@ -432,7 +445,7 @@ class Xdm1000Ctrl(object):
             "traceback": None,
             "message": "direct_scpi_mode",
         }
-        self._direct_result_store = {"result": None}
+        self._direct_result_store = {"result": None}  # type: Dict[str, object]
 
         self.scpi = None
         self._manager = None
@@ -734,7 +747,9 @@ class Xdm1000Ctrl(object):
         if range_value is not None:
             specified.append("range_value")
         if len(specified) != 1:
-            raise ValueError("set_range() は value, index, range_value のいずれか1つだけを指定する。")
+            raise ValueError(
+                "set_range() は value, index, range_value のいずれか1つだけを指定する。"
+            )
 
         mode = self._mode
         if index is not None:
