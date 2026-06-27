@@ -2,7 +2,8 @@ from typing import Optional, Any, Dict, overload, Union
 import httpx
 from httpx import Response
 from builtins import bool, float, int, str
-from xdm1000.server_fastapi.models.common import AutoRangeRequest, BoolResponse, ClearRequest, ContinueCountRequest, ContinueDurationRequest, ContinueIntervalRequest, IntegrationSpeedRequest, ModeRequest, RangeRequest, StringResponse, WaitRequest, WaitUntilDoneRequest
+from xdm1000.server_fastapi.models.common import AutoRangeRequest, BoolResponse, ClearRequest, ContinueCountRequest, ContinueDurationRequest, ContinueIntervalRequest, IntegrationSpeedRequest, ModeRequest, StringResponse, WaitRequest, WaitUntilDoneRequest
+from xdm1000.server_fastapi.spec import RangeRequest
 class AsyncXdm1000Client:
     _client: httpx.AsyncClient
     _logger: Any
@@ -54,12 +55,12 @@ class AsyncXdm1000Client:
     async def set_mode(self, **kwargs) -> Any: ...
     @overload
     async def set_mode(self, *args, **kwargs) -> Any: ...
-    # 測定レンジを設定する
-    # set_range(range_value)
+    # 測定レンジを物理量または離散番号で設定する
+    # set_range(value=None, index=None, range_value=None)
     @overload
     async def set_range(self, req: RangeRequest) -> Any: ...
     @overload
-    async def set_range(self, range_value: Union[str, int, float] = ...) -> Any: ...
+    async def set_range(self, value: Union[str, int, float, type(None)] = ..., index: Optional[int] = ..., range_value: Union[str, int, float, type(None)] = ...) -> Any: ...
     @overload
     async def set_range(self, params: dict) -> Any: ...
     @overload
@@ -180,6 +181,14 @@ class AsyncXdm1000Client:
     async def get_result(self, **kwargs) -> Any: ...
     @overload
     async def get_result(self, *args, **kwargs) -> Any: ...
+    # 実行中の測定に停止要求を出す
+    # stop()
+    @overload
+    async def stop(self) -> Any: ...
+    @overload
+    async def stop(self, **kwargs) -> Any: ...
+    @overload
+    async def stop(self, *args, **kwargs) -> Any: ...
     # running が終わるまで待つ
     # wait_until_done(poll_interval=0.2)
     @overload
