@@ -1,5 +1,6 @@
 # xdm1000/server_fastapi/__init__.py
 
+from ese774_frame import DeviceProxy
 from ese774_frame.clients import register_device_proxy
 
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
@@ -24,4 +25,5 @@ __all__ = [
     "Xdm1000Router",
     "SyncXdm1000Client",
     "AsyncXdm1000Client",
+    "DeviceProxy",
 ]

@@ -4,12 +4,11 @@ K.NAKADA, kengo.nakada@gmail.com
 XDM1000 server_fastapi 用 .pyi 生成スクリプト
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from ese774_frame.routers.make_pyi_device_router import make_pyi_device_router
 from ese774_frame.clients.make_pyi_device_client import make_pyi_device_client
+from ese774_frame.clients.make_pyi_device_proxy import make_pyi_device_proxy
 
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
 
@@ -36,6 +35,27 @@ def main() -> None:
         filename=str(root / "routers" / "xdm1000_router.pyi"),
         api_spec=xdm1000_api_spec,
         class_name="Xdm1000Router",
+    )
+
+    make_pyi_device_proxy(
+        filename=str(root / "__init__.pyi"),
+        import_lines=[
+            "from xdm1000.server_fastapi.spec import xdm1000_api_spec",
+            "from xdm1000.server_fastapi.routers import Xdm1000Router",
+            "from xdm1000.server_fastapi.clients import SyncXdm1000Client",
+            "from xdm1000.server_fastapi.clients import AsyncXdm1000Client",
+        ],
+        device_class="Xdm1000Ctrl",
+        aliases=["xdm1000"],
+        sync_client_class_name="SyncXdm1000Client",
+        async_client_class_name="AsyncXdm1000Client",
+        all_names=[
+            "xdm1000_api_spec",
+            "Xdm1000Router",
+            "SyncXdm1000Client",
+            "AsyncXdm1000Client",
+            "DeviceProxy",
+        ],
     )
 
 
