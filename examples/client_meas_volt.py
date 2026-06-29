@@ -28,7 +28,8 @@ def main() -> None:
         async_mode=False,
     )
 
-    dmm.set_mode("voltage_dc")
+    # dmm.set_mode("voltage_dc")
+    dmm.set_mode("current_dc")
     dmm.set_auto_range(True)
     # dmm.set_range(5.0)
     dmm.set_range("500mV")
