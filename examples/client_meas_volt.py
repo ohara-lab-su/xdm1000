@@ -32,7 +32,7 @@ def main() -> None:
     dmm.set_mode("current_dc")
     dmm.set_auto_range(True)
     # dmm.set_range(5.0)
-    dmm.set_range("500mV")
+    # dmm.set_range("500mV")
     dmm.set_integration_speed("F")
 
     result = dmm.meas()
