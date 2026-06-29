@@ -17,7 +17,8 @@ def main() -> None:
         async_mode=False,
     )
 
-    dmm.set_mode("voltage_dc")
+    # dmm.set_mode("voltage_dc")
+    dmm.set_mode("current_dc")
     dmm.set_auto_range(True)
     dmm.set_integration_speed("F")
 
