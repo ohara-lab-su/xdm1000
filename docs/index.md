@@ -1,4 +1,5 @@
 # XDM1000 / XDM1241 制御ドキュメント
+view on [github](https://github.com/ohara-lab-su/xdm1000/) / [ohara-lab-su (doc)](https://ohara-lab-su.github.io/)
 
 OWON XDM1000/XDM1241 系デジタルマルチメータ用の SCPI ドライバ、上位制御クラス、multiprocessing ワーカー、FastAPI/ese774_frame 透過サーバー構成のドキュメントである。
 
