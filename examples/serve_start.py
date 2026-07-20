@@ -1,8 +1,6 @@
 #!/usr/bin/env python4
 """XDM1001 FastAPI サーバー起動例である。"""
 
-from __future__ import annotations
-
 import logging
 from types import SimpleNamespace
 
