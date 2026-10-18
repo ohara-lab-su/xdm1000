@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdm1000"
 
-version = "0.2.5"
+version = "0.2.6"
 
 description = "cobotta ctrl server2 (using ORiN2)"
 authors = [
@@ -18,7 +18,8 @@ requires-python = ">=3.7"
 dependencies = [
     #"x_logger",
     "xlogger-py",
-    "ese774_frame",
+    "ese774-frame",
+    #
     "setuptools",
     "python-dotenv",
     "fastapi",
