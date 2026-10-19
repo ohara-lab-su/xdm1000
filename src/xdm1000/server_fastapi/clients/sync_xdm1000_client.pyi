@@ -1,4 +1,4 @@
-from typing import Optional, Any, Dict, overload, Union
+from typing import Optional, Any, Dict, List, Tuple, Sequence, Mapping, Callable, Type, Literal, overload, Union
 import httpx
 from builtins import bool, float, int, str
 from xdm1000.server_fastapi.models.common import AutoRangeRequest, BoolResponse, ClearRequest, ContinueCountRequest, ContinueDurationRequest, ContinueIntervalRequest, IntegrationSpeedRequest, ModeRequest, StringResponse, WaitRequest, WaitUntilDoneRequest
@@ -7,7 +7,7 @@ class SyncXdm1000Client:
     _client: httpx.Client
     _logger: Any
     _base_url: str
-    _api_spec: list = None
+    _api_spec: Optional[list] = None
     def __init__(self, config: Any = ..., server_ip: str = ..., server_port: int = ..., base_url: str = ..., api_spec: Optional[list] = None, logger: Optional[Any] = None, log_level: str = ..., object_name: str = ...): ...
     def _post(self, url, **kwargs) -> Any: ...
     def dispatch(self, method: str, *args, **kwargs) -> Any: ...
