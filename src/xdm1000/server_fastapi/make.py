@@ -39,23 +39,14 @@ def main() -> None:
 
     make_pyi_device_proxy(
         filename=str(root / "__init__.pyi"),
-        import_lines=[
-            "from xdm1000.server_fastapi.spec import xdm1000_api_spec",
-            "from xdm1000.server_fastapi.routers import Xdm1000Router",
-            "from xdm1000.server_fastapi.clients import SyncXdm1000Client",
-            "from xdm1000.server_fastapi.clients import AsyncXdm1000Client",
-        ],
-        device_class="Xdm1000Ctrl",
-        aliases=["xdm1000"],
-        sync_client_class_name="SyncXdm1000Client",
-        async_client_class_name="AsyncXdm1000Client",
-        all_names=[
-            "xdm1000_api_spec",
-            "Xdm1000Router",
-            "SyncXdm1000Client",
-            "AsyncXdm1000Client",
-            "DeviceProxy",
-        ],
+        device_names=["xdm1000"],
+        async_client_module="xdm1000.server_fastapi.clients",
+        async_client_class="AsyncXdm1000Client",
+        sync_client_module="xdm1000.server_fastapi.clients",
+        sync_client_class="SyncXdm1000Client",
+        default_async_mode=True,
+        proxy_name="DeviceProxy",
+        create_proxy_name="create_device_proxy",
     )
 
 
