@@ -1,5 +1,8 @@
 # FastAPI / ese774_frame 連携
 
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.en.md)
+[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.md)
+
 `server_fastapi` は `Xdm1000Ctrl` を ese774_frame 経由で FastAPI に公開するための構成である。
 
 SCPI ドライバを直接公開しない。
@@ -66,12 +69,14 @@ xdm1000/server_fastapi/
 # response_model
 
 測定結果のように dict をそのまま返す API では `response_model=None` を用いる。
-ese774_frame 側では戻り値を `value` に包む処理が存在するため、`DictResponse` を指定すると FastAPI の response validation で失敗する場合がある。
+ese774_frame 側では戻り値を `value` に包む処理が存在するため、`DictResponse` を指定すると FastAPI の response validation
+で失敗する場合がある。
 そのため、`meas_one_shot()` などの dict 返却 API は `response_model=None` とする。
 
 ---
 
 # Router
+
 Router は ese774_frame の `DeviceRouter` を継承する。
 
 ```python
@@ -141,7 +146,6 @@ from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
 from xdm1000.server_fastapi.spec import xdm1000_api_spec
 from xdm1000.server_fastapi.routers.xdm1000_router import Xdm1000Router
 
-
 PORT = "/dev/cu.usbserial-10"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8000
@@ -186,6 +190,7 @@ if __name__ == "__main__":
 ---
 
 # クライアント測定
+
 代表的なクライアント測定例は `examples/client_meas_volt.py` である。
 
 ```python
@@ -193,7 +198,6 @@ if __name__ == "__main__":
 """XDM1000 電圧測定サンプル"""
 
 from xdm1000.server_fastapi.clients.sync_xdm1000_client import SyncXdm1000Client
-
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -237,5 +241,7 @@ ese774_frame は device class 生成時にこれらを渡す。
 `config` が渡された場合、`PORT`, `TIMEOUT`, `BAUDRATE` を参照できるようにする。
 
 ---
+
 ## 作者
+
 - Kengo NAKADA
