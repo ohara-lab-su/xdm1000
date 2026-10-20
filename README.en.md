@@ -1,7 +1,7 @@
-# FastAPI / ese774_frame Integration
+# XDM1000 (FastAPI / ese774_frame Integration)
 
-[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.en.md)
-[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.md)
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.en.md)
+[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.md)
 
 `server_fastapi` provides a way to expose `Xdm1000Ctrl` through FastAPI using ese774_frame.
 
