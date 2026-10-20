@@ -1,7 +1,7 @@
-# FastAPI / ese774_frame 連携
+# XDM1000 (FastAPI / ese774_frame 連携)
 
-[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.en.md)
-[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000-py/blob/main/README.md)
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.en.md)
+[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.md)
 
 `server_fastapi` は `Xdm1000Ctrl` を ese774_frame 経由で FastAPI に公開するための構成である。
 
