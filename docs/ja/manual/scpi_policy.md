@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/scpi_policy.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/scpi_policy.html)
+
 # SCPI 採用方針
 
 SCPI ドライバ層は、測定器が受け付ける SCPI コマンドを薄く Python メソッドに写す層である。上位 ctrl API の都合に合わせて SCPI 層を高級化しない。

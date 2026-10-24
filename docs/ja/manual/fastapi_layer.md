@@ -1,3 +1,11 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/fastapi_layer.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/fastapi_layer.html)
+
+> **API世代に関する注意**：このページの `spec.py` に列挙したエンドポイント名は、添付された FastAPI レイヤの資料に基づくものです。一方、[ctrl APIリファレンス](ctrl_api_reference.md) では `set_mode()`、`meas_continue()`、`get_result()` を現行の制御APIとし、`start_continuous_meas()` などを旧APIとしています。したがって、ここにある旧メソッド名を現行の FastAPI エンドポイントとして利用できるとは断定できません。実際に公開されるエンドポイントは、使用する版の `server_fastapi/spec.py` を確認してください。**この資料だけでは現在の実装との一致を検証できません。**
+
+
+> **API世代に関する注意**：このページの `spec.py` に列挙したエンドポイント名は、添付された FastAPI レイヤの資料に基づくものです。一方、[ctrl APIリファレンス](ctrl_api_reference.md) では `set_mode()`、`meas_continue()`、`get_result()` を現行の制御APIとし、`start_continuous_meas()` などを旧APIとしています。したがって、ここにある旧メソッド名を現行の FastAPI エンドポイントとして利用できるとは断定できません。実際に公開されるエンドポイントは、使用する版の `server_fastapi/spec.py` を確認してください。**この資料だけでは現在の実装との一致を検証できません。**
+
+
 # FastAPI 公開レイヤ
 
 `server_fastapi/` は、`Xdm1000Ctrl` を ese774_frame の透過 API として公開するためのレイヤである。`xdm1000_ctrl.py` 自体は FastAPI に依存しない。

@@ -1,3 +1,8 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/implementation_notes.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/implementation_notes.html)
+
+> **版に関する注意**：本資料の statistics mode に関する記述は旧実装の検討事項です。現行APIとして記載された `Xdm1000Ctrl` には `start_statistics_mode()` が存在しないため、現行の使用方法として解釈しないでください。
+
+
 # 実装上の注意事項
 
 ## ctrl 層に公開しない API

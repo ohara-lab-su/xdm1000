@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/architecture.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/architecture.html)
+
 # システム構成
 
 本構成は、OWON XDM1000/XDM1241 系デジタルマルチメータを Python から制御するための構成である。低レベル SCPI 層、測定器として扱う上位制御層、長時間測定用 worker、FastAPI/ese774_frame 公開層を分離する。

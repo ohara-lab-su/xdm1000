@@ -1,37 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCS_DIR="$SCRIPT_DIR"
-ROOT_DIR="$(cd "$DOCS_DIR/.." && pwd)"
-SRC_DIR="$ROOT_DIR/src"
-
-PKG_NAME="xdm1000"   # パッケージ名を明示
-
-export PYTHONPATH="$SRC_DIR:${PYTHONPATH:-}"
-
-echo "Cleaning build..."
-rm -rf "$DOCS_DIR/_build" "$DOCS_DIR/api"
-mkdir -p "$DOCS_DIR/api" "$DOCS_DIR/_static"
-
-echo "Generating API stubs with sphinx-apidoc..."
-sphinx-apidoc -o "$DOCS_DIR/api" "$SRC_DIR/$PKG_NAME" -f --module-first
-
-echo "Building HTML..."
-sphinx-build -b html "$DOCS_DIR" "$DOCS_DIR/_build/html"
-
-# GitHub Pages が Jekyll で _static 等を落とすのを防ぐ（デプロイ方法に依らず害なし）
-: > "$DOCS_DIR/.nojekyll"
-: > "$DOCS_DIR/_build/html/.nojekyll"
-
-echo "Creating local redirect index.html..."
-cat > "$DOCS_DIR/index.html" << 'HTML'
-<!doctype html>
-<meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=./_build/html/">
-<link rel="canonical" href="./_build/html/">
-<title>Redirecting…</title>
-<p>Redirecting to <a href="./_build/html/">./_build/html/</a></p>
-HTML
-
-echo "Done."
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOCS="$ROOT/docs"
+OUT="$DOCS/_build/html"
+WORK="$DOCS/_work"
+PACKAGE="$ROOT/src/xdm1000"
+if [[ ! -d "$PACKAGE" ]]; then
+  echo "Package source missing: $PACKAGE" >&2
+  exit 1
+fi
+rm -rf "$OUT" "$WORK"
+mkdir -p "$OUT" "$WORK"
+for lang in en ja; do
+  src="$WORK/$lang"
+  mkdir -p "$src"
+  cp "$DOCS/conf.py" "$src/conf.py"
+  cp -R "$DOCS/$lang/." "$src/"
+  sphinx-apidoc --force --module-first -o "$src/api" "$PACKAGE"
+  test -s "$src/api/modules.rst" || { echo "API index was not generated: $lang" >&2; exit 1; }
+  if [[ "$lang" == en ]]; then
+    XDM_DOC_LANG=en sphinx-build -n -W --keep-going -b html "$src" "$OUT"
+    XDM_DOC_LANG=en sphinx-build -n -W --keep-going -b html "$src" "$OUT/en"
+  else
+    XDM_DOC_LANG=ja sphinx-build -n -W --keep-going -b html "$src" "$OUT/ja"
+  fi
+done
+for target in index.html en/index.html ja/index.html api/modules.html en/api/modules.html ja/api/modules.html; do
+  test -f "$OUT/$target" || { echo "Missing output: $target" >&2; exit 1; }
+done
+touch "$OUT/.nojekyll"

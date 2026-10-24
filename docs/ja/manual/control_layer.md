@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/control_layer.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/control_layer.html)
+
 # 上位制御層 (xdm1000_ctrl.py)
 
 `xdm1000_ctrl.py` は、XDM1000 / XDM1241 を測定器として扱う上位制御クラスを提供する。SCPI 低レベル API をそのまま公開する層ではない。
