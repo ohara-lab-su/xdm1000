@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/ctrl_api_reference.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/ctrl_api_reference.html)
+
 # ctrl API リファレンス
 
 `xdm1000_ctrl.py` は XDM1000 / XDM1241 を測定器として扱う利用者向け上位制御 API を提供する。SCPI 層は SCPI コマンドの薄いラッパであり、ctrl 層では測定モード、レンジ、オートレンジ、内部測定速度、連続測定条件を上位 API として整理する。

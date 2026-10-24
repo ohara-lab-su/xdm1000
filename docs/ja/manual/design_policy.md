@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/design_policy.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/design_policy.html)
+
 # 設計方針
 
 本ライブラリは、SCPI コマンド送受信、測定器としての上位操作、長時間測定、FastAPI 公開を分離する。

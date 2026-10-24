@@ -1,3 +1,5 @@
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/scpi_layer_overview.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/scpi_layer_overview.html)
+
 # SCPI ドライバ層の概要
 
 `xdm1000_scpi.py` は OWON XDM1000/XDM1241 系デジタルマルチメータに SCPI コマンドを送る低レベルドライバである。pyserial を内包し、ASCII テキストの SCPI コマンド送信、応答取得、基本的な型変換を行う。

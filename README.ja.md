@@ -1,25 +1,24 @@
-# XDM1000 (FastAPI / ese774_frame Integration)
+# XDM1000 (FastAPI / ese774_frame 連携)
 
 [![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.en.md)
 [![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.md)
 
-`server_fastapi` provides a way to expose `Xdm1000Ctrl` through FastAPI using ese774_frame.
+`server_fastapi` は `Xdm1000Ctrl` を ese774_frame 経由で FastAPI に公開するための構成である。
 
-The SCPI driver is not exposed directly.
+SCPI ドライバを直接公開しない。
 
-The control class instantiated on the server is `Xdm1000Ctrl`.
-
----
-
-# Requirements
-
-- [ese774_frame](https://github.com/ohara-lab-su/ese774_frame): A framework developed for the Susanoo Project.
-- [x_logger](https://github.com/ohara-lab-su/x_logger): Any logger may be used, but the logger developed for the Susanoo
-  Project is recommended.
+サーバー側で実体化される制御クラスは `Xdm1000Ctrl` である。
 
 ---
 
-# Basic Structure of XDM1000 Control
+# 必要なもの
+
+- [ese774_frame](https://github.com/ohara-lab-su/ese774_frame): スサノオプロジェクトで作成したフレーム
+- [x_logger](https://github.com/ohara-lab-su/x_logger): ローガーならば何でも構わないが、スサノオプロジェクトのロガーを推奨する
+
+---
+
+# xdm1000 制御の基本構成
 
 ```text
 xdm1000/server_fastapi/
@@ -30,7 +29,7 @@ xdm1000/server_fastapi/
 
 ---
 
-# Basic Structure of the XDM1000 Server
+# xdm1000 Server の基本構成
 
 ```text
 xdm1000/server_fastapi/
@@ -51,34 +50,34 @@ xdm1000/server_fastapi/
 
 # spec.py
 
-`spec.py` defines the APIs exposed through FastAPI.
-Rather than exposing every method of `Xdm1000Ctrl`, only APIs that are meaningful for external use are exposed.
+`spec.py` は FastAPI に公開する API を定義する。
+`Xdm1000Ctrl` の全メソッドを公開するのではなく、外部から使う意味がある API のみを公開する。
 
-These mainly include:
+公開対象は主に次である。
 
-- Retrieving device state
-- One-shot measurements
-- Continuous measurements
-- Statistics measurements
-- Retrieving results
-- Stop requests
+- 状態取得
+- One Shot 測定
+- Continuous 測定
+- Statistics 測定
+- 結果取得
+- 停止要求
 
-Low-level SCPI APIs are not exposed.
+低レベル SCPI API は公開しない。
 
 ---
 
 # response_model
 
-Use `response_model=None` for APIs that directly return a dictionary, such as measurement results.
-Because ese774_frame includes logic that wraps return values in `value`, specifying `DictResponse` may cause FastAPI
-response validation to fail.
-Therefore, APIs returning dictionaries, such as `meas_one_shot()`, should use `response_model=None`.
+測定結果のように dict をそのまま返す API では `response_model=None` を用いる。
+ese774_frame 側では戻り値を `value` に包む処理が存在するため、`DictResponse` を指定すると FastAPI の response validation
+で失敗する場合がある。
+そのため、`meas_one_shot()` などの dict 返却 API は `response_model=None` とする。
 
 ---
 
 # Router
 
-The router inherits from ese774_frame's `DeviceRouter`.
+Router は ese774_frame の `DeviceRouter` を継承する。
 
 ```python
 from ese774_frame.routers.device_router import DeviceRouter
@@ -88,35 +87,35 @@ class Xdm1000Router(DeviceRouter):
     pass
 ```
 
-Do not implement device-specific operations in the router.
-The actual operations belong in `Xdm1000Ctrl`.
+Router 側に装置固有の実処理は書かない。
+実処理は `Xdm1000Ctrl` に置く。
 
 ---
 
 # Client
 
-The clients provided by ese774_frame are used.
+Client は ese774_frame の client を利用する。
 
-The synchronous client is imported as follows:
+同期 client は次である。
 
 ```python
 from xdm1000.server_fastapi.clients.sync_xdm1000_client import SyncXdm1000Client
 ```
 
-The asynchronous client is imported as follows:
+非同期 client は次である。
 
 ```python
 from xdm1000.server_fastapi.clients.async_xdm1000_client import AsyncXdm1000Client
 ```
 
-Use absolute imports.
+import は絶対 import を用いる。
 
 ---
 
 # make.py
 
-`make.py` is a script for generating `.pyi` files.
-It generates the following three files:
+`make.py` は `.pyi` を生成するためのスクリプトである。
+生成対象は次の三つである。
 
 ```text
 clients/async_xdm1000_client.pyi
@@ -124,19 +123,19 @@ clients/sync_xdm1000_client.pyi
 routers/xdm1000_router.pyi
 ```
 
-Do not add unnecessary discovery logic or fallback imports.
+余計な探索処理や fallback import は入れない。
 
-Import and use the generators from ese774_frame directly.
+ese774_frame の generator を直接 import して使う。
 
 ---
 
-# Starting the Server
+# サーバー起動
 
-A representative startup script is `examples/serve_start.py`.
+代表的な起動スクリプトは `examples/serve_start.py` である。
 
 ```python
 #!/usr/bin/env python3
-"""Example of starting the XDM1000 FastAPI server."""
+"""XDM1000 FastAPI サーバー起動例である。"""
 
 from types import SimpleNamespace
 
@@ -190,13 +189,13 @@ if __name__ == "__main__":
 
 ---
 
-# Client Measurement
+# クライアント測定
 
-A representative client measurement example is `examples/client_meas_volt.py`.
+代表的なクライアント測定例は `examples/client_meas_volt.py` である。
 
 ```python
 #!/usr/bin/env python3
-"""Example of measuring voltage with the XDM1000."""
+"""XDM1000 電圧測定サンプル"""
 
 from xdm1000.server_fastapi.clients.sync_xdm1000_client import SyncXdm1000Client
 
@@ -216,15 +215,15 @@ if __name__ == "__main__":
 
 ---
 
-# API Paths
+# API path
 
-ese774_frame exposes APIs using the following path format:
+ese774_frame により、API は次の形式で公開される。
 
 ```text
 POST /instance/xdm1000/<api_name>
 ```
 
-Examples:
+例
 
 ```text
 POST /instance/xdm1000/meas_one_shot
@@ -234,15 +233,15 @@ POST /instance/xdm1000/start_continuous_meas
 
 ---
 
-# Notes
+# 注意事項
 
-The FastAPI server instantiates `Xdm1000Ctrl`.
-`Xdm1000Ctrl.__init__()` must accept `logger`, `log_level`, and `config`.
-ese774_frame passes these arguments when creating the device class.
-When `config` is provided, `PORT`, `TIMEOUT`, and `BAUDRATE` must be accessible from it.
+FastAPI サーバー側では `Xdm1000Ctrl` が実体化される。
+`Xdm1000Ctrl.__init__()` は `logger`, `log_level`, `config` を受け取れる必要がある。
+ese774_frame は device class 生成時にこれらを渡す。
+`config` が渡された場合、`PORT`, `TIMEOUT`, `BAUDRATE` を参照できるようにする。
 
 ---
 
-## Author
+## 作者
 
 - Kengo NAKADA
