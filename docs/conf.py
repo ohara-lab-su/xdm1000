@@ -7,7 +7,7 @@ from pathlib import Path
 # Resolve the repository root from either the staging or the source location.
 CONF_DIR = Path(__file__).resolve().parent
 if CONF_DIR.parent.name == "_work":
-    ROOT = CONF_DIR.parents[3]
+    ROOT = CONF_DIR.parents[2]
 else:
     ROOT = CONF_DIR.parent
 sys.path.insert(0, str(ROOT / "src"))
