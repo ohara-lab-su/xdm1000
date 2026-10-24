@@ -1,43 +1,55 @@
-[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/control_layer.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/control_layer.html)
+# High-Level Control Layer (xdm1000_ctrl.py)
 
-# High-Level Control Layer
+`xdm1000_ctrl.py` provides a high-level control class for operating the XDM1000 / XDM1241 as measurement instruments. It does not simply expose the low-level SCPI API.
 
-`Xdm1000Ctrl` is the instrument-oriented API. It manages measurement mode, range, integration speed, continuous-measurement settings, cached state and results. With `use_process=True`, a child worker owns the serial connection; the parent uses queues and shared state. With `use_process=False`, SCPI executes in the caller process. The source document explicitly distinguishes the current `set_mode` / `meas_continue` interface from older APIs.
+The current control layer requires the instrument state to be configured explicitly before calling `meas()` or `meas_continue()`. The ctrl layer caches the measurement mode, range, internal measurement speed, and continuous-measurement settings, and reflects them in shared state on the worker-process side.
 
-> **Documentation scope:** This English guide is an abridged technical companion to the complete Japanese manual. This page is a summary of the supplied Japanese document; consult the Japanese version for details and complete examples.
+## Separation of Responsibilities
 
-## Responsibilities
+### SCPI Layer
 
-### SCPI
+`xdm1000_scpi.py` is a low-level SCPI wrapper.
 
-```text
-serial.Serial を開く
-SCPI コマンドを write/query する
-*IDN? を問い合わせる
-FUNCtion / RANGE / RATE / MEAS1? などを薄く包む
-```
-
-### ctrl
+Its main responsibilities are:
 
 ```text
-測定モード名を ctrl API 名として整理する
-測定モード、レンジ、オートレンジ、内部測定速度を保持する
-単発測定と連続測定の入口を分ける
-連続測定条件を保持する
-process 分離時の worker との RPC を管理する
-測定結果を result store に保存する
+Open serial.Serial
+Write/query SCPI commands
+Query *IDN?
+Provide thin wrappers for FUNCtion / RANGE / RATE / MEAS1?, etc.
 ```
 
-### worker
+### ctrl Layer
+
+`xdm1000_ctrl.py` provides the user-facing API.
+
+Its main responsibilities are:
 
 ```text
-親プロセスから command queue で指示を受ける
-SCPI オブジェクトを保持する
-測定器状態を共有 state に反映する
-単発測定結果および連続測定結果を result store に保存する
+Map measurement modes to ctrl API names
+Maintain mode, range, auto-ranging, and internal measurement speed
+Provide separate entry points for single and continuous measurements
+Maintain continuous-measurement settings
+Manage RPC to the worker in process-separated mode
+Store measurement results in the result store
 ```
 
-## SCPI layer
+### Worker Layer
+
+When `use_process=True`, `xdm1000_worker.py` holds the SCPI instance in a child process.
+
+Its main responsibilities are:
+
+```text
+Receive commands from the parent via the command queue
+Own the SCPI object
+Reflect instrument status in shared state
+Store single- and continuous-measurement results in the result store
+```
+
+## Main Public APIs
+
+The main public APIs of the current `Xdm1000Ctrl` are:
 
 ```text
 close()
@@ -58,6 +70,8 @@ get_result(clear=False)
 wait_until_done(poll_interval=0.2)
 ```
 
+The following are legacy APIs and are not present in the current `Xdm1000Ctrl`:
+
 ```text
 stop_job()
 get_continuous_result(clear=False)
@@ -70,7 +84,11 @@ start_continuous_meas(kind=None, duration=0.0, range_value=None, rate=None, inte
 start_statistics_mode(kind=None, duration=0.0, range_value=None, rate=None, settle=0.0)
 ```
 
-## Control layer
+`remote()`, `local()`, `query()`, and `write()` are not exposed. They belong to the SCPI layer.
+
+## use_process=True
+
+With `use_process=True`, the parent process receives user API calls, while the child worker process handles SCPI communication.
 
 ```text
 Xdm1000Ctrl
@@ -87,9 +105,17 @@ Xdm1000Ctrl
             └── serial.Serial
 ```
 
-## Worker layer
+Only the worker process owns the serial port. The parent process does not execute SCPI operations directly.
 
-## Public API
+The parent-side `meas_continue()` sends a start request to the worker and returns after receiving `{"job_id": "..."}`. The measurement loop continues in the worker, and results are retrieved using `get_result()`.
+
+## use_process=False
+
+With `use_process=False`, `Xdm1000Ctrl` creates its own `Xdm1000Scpi` instance. SCPI commands execute directly in the same process.
+
+Although the API name is still `meas_continue()`, the call runs synchronously and blocks the caller. After completion, it returns `{"job_id": "..."}`.
+
+## Initialization
 
 ```python
 Xdm1000Ctrl(
@@ -103,7 +129,19 @@ Xdm1000Ctrl(
 )
 ```
 
-## Process mode
+When `config` is supplied, its `PORT`, `TIMEOUT`, and `BAUDRATE` values take precedence. A missing final `port` raises `ValueError`.
+
+With `use_process=True`, initialization creates `mp.Manager()`, command and response queues, a stop event, an RPC lock, and a worker process.
+
+With `use_process=False`, initialization creates `Xdm1000Scpi` and calls `remote()`.
+
+## state
+
+`get_state()` returns the current state as a dictionary.
+
+With `use_process=True`, `process_alive` is added to the shared dictionary. With `use_process=False`, `process_alive=False` is added to the direct-mode state.
+
+The principal keys are:
 
 ```text
 worker_alive
@@ -128,7 +166,11 @@ continue_duration
 continue_count
 ```
 
-## Direct mode
+`mode`, `range_value`, `auto_range`, `integration_speed`, `continue_interval`, `continue_duration`, and `continue_count` are configuration values cached by the ctrl layer.
+
+## Restrictions While Running
+
+The following APIs cannot be called while a measurement is running:
 
 ```text
 idn()
@@ -143,6 +185,10 @@ meas()
 meas_continue()
 ```
 
+Calling them while running raises `DeviceBusyError`.
+
+The following APIs remain available while running:
+
 ```text
 get_state()
 is_running()
@@ -150,7 +196,11 @@ get_result()
 wait_until_done()
 ```
 
-## Initialization
+The current implementation does not provide `stop_job()`. Continuous measurement stops when `continue_duration` or `continue_count` is reached.
+
+## Measurement Modes
+
+The ctrl API mode names map to SCPI `FUNCtion` parameters as follows:
 
 ```text
 voltage_dc      -> VOLT
@@ -167,7 +217,14 @@ diode           -> DIOD
 continuity      -> CONT
 ```
 
-## State
+An unsupported mode raises `ValueError`.
+
+
+## Manual Range
+
+`set_range(value=None, index=None, range_value=None)` selects a manual range for the current measurement mode.
+
+`value` specifies a physical quantity. A numeric value uses the base unit of the current mode: V for voltage, A for current, Ohm for resistance, and F for capacitance.
 
 ```python
 dmm.set_mode("voltage_dc")
@@ -176,11 +233,19 @@ dmm.set_range(value="500 mV")
 dmm.set_range(value="500mV")
 ```
 
+`index` directly selects a discrete SCPI `RANGE` index.
+
 ```python
 dmm.set_range(index=3)
 ```
 
-## Restrictions during acquisition
+Do not specify `value`, `index`, and `range_value` together. `range_value` is a legacy-compatible alias for `value`.
+
+## Internal Measurement Speed
+
+`set_integration_speed(speed)` sets the SCPI `RATE`.
+
+Accepted values are:
 
 ```text
 F
@@ -188,7 +253,17 @@ M
 S
 ```
 
-## Measurement modes
+Lowercase input is converted to uppercase. Other values raise `ValueError`.
+
+`integration_speed` is the instrument’s internal measurement speed, not the sample interval of a continuous measurement. Use `set_continue_interval()` to set that interval.
+
+## Single Measurement
+
+`meas(wait=None)` reads `MEAS1?` once using the current settings.
+
+`set_mode()` must be called before `meas()`.
+
+The result can also be retrieved with `get_result()`.
 
 ```python
 {
@@ -204,7 +279,21 @@ S
 }
 ```
 
-## Manual range
+## Continuous Measurement
+
+`meas_continue(wait=None)` performs continuous measurement using the current settings.
+
+At least one of `set_continue_duration()` and `set_continue_count()` must be configured before `meas_continue()`. If both values are `None`, it raises `ValueError`.
+
+The `interval` argument of `set_continue_interval(interval)` must be nonnegative. With zero, samples are read as quickly as possible.
+
+The `duration` argument of `set_continue_duration(duration)` must be `None` or positive.
+
+The `count` argument of `set_continue_count(count)` must be `None` or a positive integer.
+
+With `use_process=True`, a successful start returns `{"job_id": ...}` and the result is stored in `result_store["result"]`.
+
+A continuous-measurement result has the following form:
 
 ```python
 {
@@ -241,9 +330,19 @@ S
 }
 ```
 
-## Integration speed
+In direct mode (`use_process=False`), the continuous result does not include `stats`; it includes `count` instead.
 
-## Single measurement
+## Retrieving Results
+
+`get_result(clear=False)` returns the most recent single- or continuous-measurement result.
+
+With `clear=True`, the stored result is deleted after retrieval.
+
+`get_continuous_result()` and `get_statistics_result()` are not current APIs. Use `get_result()` for all results.
+
+## Transparent FastAPI
+
+The transparent APIs exposed by `server_fastapi/spec.py` are:
 
 ```text
 get_state
@@ -261,3 +360,5 @@ meas_continue
 get_result
 wait_until_done
 ```
+
+All use `object_name="xdm1000"` and HTTP method `post`.

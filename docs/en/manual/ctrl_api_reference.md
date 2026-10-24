@@ -1,19 +1,25 @@
-[![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/manual/ctrl_api_reference.html) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/manual/ctrl_api_reference.html)
+# ctrl API Reference
 
-# Control API Reference
+`xdm1000_ctrl.py` provides the user-facing high-level control API for the XDM1000 / XDM1241 instruments. The SCPI layer is a thin wrapper over SCPI commands; the ctrl layer organizes measurement mode, range, auto-ranging, internal measurement speed, and continuous-measurement settings into a higher-level API.
 
-This is the instrument-oriented API reference. Configure mode, range, autoranging, and integration speed before invoking `meas()` or `meas_continue()`. Continuous acquisition has separate interval, duration and count settings. `get_result()` retrieves results; `get_state()` reports controller status. The Japanese source explicitly marks several earlier convenience methods as obsolete.
+This reference describes the APIs documented for the current `xdm1000_ctrl.py`, `xdm1000_worker.py`, and `server_fastapi/spec.py`.
 
-> **Documentation scope:** This English guide is an abridged technical companion to the complete Japanese manual. This page is a summary of the supplied Japanese document; consult the Japanese version for details and complete examples.
+## Design Policy
 
-## Design principles
+Do not mix measurement settings into the arguments of `meas()` or `meas_continue()`. Configure the instrument first using `set_mode()`, `set_range()`, `set_auto_range()`, and `set_integration_speed()`.
+
+Single and continuous measurements have separate entry points:
 
 ```python
 result = dmm.meas()
 job = dmm.meas_continue()
 ```
 
+Set the sampling interval and termination conditions required only for continuous measurement using `set_continue_interval()`, `set_continue_duration()`, and `set_continue_count()`.
+
 ## Public API
+
+The main user-facing APIs of the current `Xdm1000Ctrl` are:
 
 ```text
 close()
@@ -34,6 +40,8 @@ get_result(clear=False)
 wait_until_done(poll_interval=0.2)
 ```
 
+The following legacy APIs are absent from the current `Xdm1000Ctrl`:
+
 ```text
 set_meas_mode()
 meas_one_shot()
@@ -46,7 +54,9 @@ get_statistics_result()
 stop_job()
 ```
 
-## Controller initialization
+`remote()`, `local()`, `query()`, and `write()` are not exposed as ctrl APIs; they are the responsibility of the SCPI layer.
+
+## Initializing Xdm1000Ctrl
 
 ```python
 Xdm1000Ctrl(
@@ -60,13 +70,35 @@ Xdm1000Ctrl(
 )
 ```
 
-## State and lifecycle
+If `config` is supplied, `PORT`, `TIMEOUT`, and `BAUDRATE` from it take precedence. If `port` remains unspecified, `ValueError` is raised.
+
+With `use_process=True`, the worker process owns the actual SCPI object. The parent sends commands to the worker and reads status and results from shared state and the result store.
+
+With `use_process=False`, `Xdm1000Ctrl` owns the SCPI object directly in the same process.
+
+## State and Lifecycle
 
 ### close()
 
+Closes the connection or worker process.
+
+With `use_process=True`, sends shutdown to the worker; if it does not exit, terminates the process, then shuts down the manager.
+
+With `use_process=False`, attempts `local()` before closing the SCPI connection.
+
 ### disconnect()
 
+Alias for `close()`.
+
 ### get_state()
+
+Returns the current state as a dictionary.
+
+With `use_process=True`, adds `process_alive` to the shared state.
+
+With `use_process=False`, adds `process_alive=False` to the direct-mode state.
+
+The main keys are:
 
 ```python
 {
@@ -93,33 +125,55 @@ Xdm1000Ctrl(
 }
 ```
 
+`args` stores the arguments received by the worker while a job is running.
+
 ### is_running()
 
+Returns `True` during a long-running measurement.
+
 ### wait_until_done(poll_interval=0.2)
+
+Waits until `running` becomes `False`. Returns a dictionary equivalent to `get_state()` at completion.
+
+Args:
 
 ```python
 poll_interval: float = 0.2
 ```
 
+Returns:
+
 ```python
 state: dict
 ```
 
-## Close
+## Instrument Identification API
 
 ### idn()
+
+Returns the response to `*IDN?`.
+
+Unavailable while running; calling it then raises `DeviceBusyError`.
+
+Returns:
 
 ```python
 "OWON,..."
 ```
 
-## Disconnect
+## Configuration API
 
 ### set_mode(mode)
+
+Sets the measurement mode for both single and continuous measurements.
+
+Args:
 
 ```python
 mode: str
 ```
+
+Supported `mode` values are:
 
 ```text
 voltage_dc
@@ -136,6 +190,8 @@ diode
 continuity
 ```
 
+The following mapping is used to set the SCPI `FUNCtion`:
+
 ```text
 voltage_dc      -> VOLT
 voltage_ac      -> VOLT AC
@@ -151,11 +207,19 @@ diode           -> DIOD
 continuity      -> CONT
 ```
 
+Calling `set_mode()` invalidates the cached `range_value` and `auto_range`, since the range depends on the measurement mode.
+
+Returns:
+
 ```python
 {"mode": mode}
 ```
 
 ### set_range(value=None, index=None, range_value=None)
+
+Sets a manual range for the current measurement mode, for both single and continuous measurements.
+
+Args:
 
 ```python
 value: str | int | float | None
@@ -163,25 +227,39 @@ index: int | None
 range_value: str | int | float | None
 ```
 
+`value` specifies a physical quantity. Numeric values are interpreted in the base unit of the current measurement mode.
+
 ```text
 voltage_dc, voltage_ac       -> V
 current_dc, current_ac       -> A
 resistance, fresistance      -> Ohm
 capacitance                  -> F
-temperature_rtd              -> KITS90 または PT100
+temperature_rtd              -> KITS90 or PT100
 ```
+
+Unit-bearing strings are accepted with or without spaces.
 
 ```python
 dmm.set_mode("voltage_dc")
-dmm.set_range(value=5.0)        # 5 V レンジ
-dmm.set_range(value="500 mV")  # 500 mV レンジ
-dmm.set_range(value="500mV")   # 500 mV レンジ
+dmm.set_range(value=5.0)        # 5 V range
+dmm.set_range(value="500 mV")  # 500 mV range
+dmm.set_range(value="500mV")   # 500 mV range
 ```
+
+`index` directly specifies a discrete SCPI `RANGE` index from the XDM1000 Programming Manual.
 
 ```python
 dmm.set_mode("voltage_dc")
-dmm.set_range(index=3)          # DCV 5 V レンジ
+dmm.set_range(index=3)          # DCV 5 V range
 ```
+
+Do not specify `value`, `index`, and `range_value` together. `range_value` is a legacy-compatible alias for `value`.
+
+The ctrl layer checks the requested value against the current mode and converts only supported discrete ranges to SCPI `RANGE <index>`. Afterward, the `auto_range` cache is set to `False`.
+
+`set_mode()` is required before `set_range()`.
+
+Returns:
 
 ```python
 {
@@ -193,9 +271,21 @@ dmm.set_range(index=3)          # DCV 5 V レンジ
 
 ### set_auto_range(enabled)
 
+Sets auto-ranging for both single and continuous measurements.
+
+Args:
+
 ```python
 enabled: bool
 ```
+
+When `enabled=True`, the SCPI layer issues `AUTO`.
+
+When `enabled=False`, the XDM1000 SCPI interface is not sent a generic `AUTO OFF`. Instead, the most recent `range_index` determined by `set_range()` is re-applied using `RANGE <index>`. Therefore, call `set_range()` before setting `enabled=False`.
+
+`set_mode()` is required before `set_auto_range()`.
+
+Returns:
 
 ```python
 {"auto_range": True | False}
@@ -203,9 +293,15 @@ enabled: bool
 
 ### set_integration_speed(speed)
 
+Sets the internal measurement speed for both single and continuous measurements.
+
+Args:
+
 ```python
 speed: str
 ```
+
+The following values are accepted; lowercase input is converted to uppercase.
 
 ```text
 F: high speed
@@ -213,17 +309,31 @@ M: middle speed
 S: low speed
 ```
 
+The SCPI command is named `RATE`, but the ctrl API calls this `integration_speed` to avoid confusion with the interval between measurement samples. The continuous-measurement interval is set by `set_continue_interval()`.
+
+Returns:
+
 ```python
 {"integration_speed": speed}
 ```
 
-## Get state
+## Continuous-Measurement Settings API
 
 ### set_continue_interval(interval)
+
+Sets the interval between measurement starts during continuous measurement.
+
+Args:
 
 ```python
 interval: float
 ```
+
+The unit is seconds. The value must be nonnegative; `0.0` reads as quickly as possible.
+
+The implementation treats it as the minimum interval from the start of one sample to the target start time of the next.
+
+Returns:
 
 ```python
 {"continue_interval": interval}
@@ -231,9 +341,19 @@ interval: float
 
 ### set_continue_duration(duration)
 
+Sets the maximum duration of continuous measurement.
+
+Args:
+
 ```python
 duration: float | None
 ```
+
+The unit is seconds. `None` disables the time limit; a numeric `duration` must be positive.
+
+If both `duration` and `continue_count` are configured, measurement ends when the first limit is reached.
+
+Returns:
 
 ```python
 {"continue_duration": duration}
@@ -241,21 +361,43 @@ duration: float | None
 
 ### set_continue_count(count)
 
+Sets the maximum number of continuous-measurement samples.
+
+Args:
+
 ```python
 count: int | None
 ```
+
+`None` disables the sample-count limit; a numeric `count` must be a positive integer.
+
+If both `duration` and `count` are `None`, `meas_continue()` raises `ValueError`.
+
+Returns:
 
 ```python
 {"continue_count": count}
 ```
 
-## Check running
+## Measurement API
 
 ### meas(wait=None)
+
+Takes one measurement using the current settings.
+
+Args:
 
 ```python
 wait: float | None = None
 ```
+
+`wait` is not an SCPI feature. It is a Python-side delay, in seconds, immediately before measurement. `None` means no delay.
+
+`mode`, `range_value`, and `integration_speed` are not measurement-call arguments. Set them beforehand using the configuration API.
+
+`set_mode()` is required before `meas()`.
+
+Returns:
 
 ```python
 {
@@ -271,33 +413,61 @@ wait: float | None = None
 }
 ```
 
+The returned result is stored for subsequent retrieval using `get_result()`.
+
 ### meas_continue(wait=None)
+
+Starts or executes continuous measurement using the current settings.
+
+Args:
 
 ```python
 wait: float | None = None
 ```
+
+`wait` is not an SCPI feature. It is a Python-side delay, in seconds, before continuous measurement starts. `None` means no delay.
+
+At minimum, configure the following before calling `meas_continue()`:
 
 ```python
 dmm.set_mode("voltage_dc")
 dmm.set_continue_duration(10.0)
 ```
 
+Alternatively:
+
 ```python
 dmm.set_mode("voltage_dc")
 dmm.set_continue_count(100)
 ```
 
+Returns:
+
 ```python
 {"job_id": "..."}
 ```
 
-## Wait until complete
+With `use_process=True`, the worker process continues measuring and only the job ID is returned to the caller. Retrieve the result with `get_result()`.
+
+With `use_process=False`, the measurement loop runs in the calling process, and the job ID is returned after completion. The call therefore blocks until measurement finishes.
+
+## Result Retrieval API
 
 ### get_result(clear=False)
+
+Returns the most recent single- or continuous-measurement result.
+
+Args:
 
 ```python
 clear: bool = False
 ```
+
+With `clear=True`, the stored result is removed after retrieval.
+
+A single-measurement result has `type="single"`; a continuous-measurement result has `type="continuous"`.
+
+Example single-measurement result:
 
 ```python
 {
@@ -312,6 +482,8 @@ clear: bool = False
     "read_elapsed": 0.02,
 }
 ```
+
+Example continuous-measurement result:
 
 ```python
 {
@@ -348,7 +520,11 @@ clear: bool = False
 }
 ```
 
-## Instrument identification
+In the current direct implementation (`use_process=False`), continuous results omit `stats`, `started_at`, and `finished_at` and include `count` instead.
+
+## Restrictions While Running
+
+The following APIs cannot be called during a running measurement:
 
 ```text
 idn()
@@ -363,6 +539,10 @@ meas()
 meas_continue()
 ```
 
+Calling one of them while running raises `DeviceBusyError`.
+
+The following APIs can still be called while running:
+
 ```text
 get_state()
 is_running()
@@ -370,7 +550,9 @@ get_result()
 wait_until_done()
 ```
 
-## Identify instrument
+## Transparent FastAPI
+
+The APIs exposed by `server_fastapi/spec.py` are:
 
 ```text
 get_state
@@ -389,6 +571,10 @@ get_result
 wait_until_done
 ```
 
+Each API is registered with `object_name="xdm1000"` and HTTP method `post`.
+
+The request models are:
+
 ```text
 set_mode                  -> ModeRequest(mode: str)
 set_range                 -> RangeRequest(value: str | int | float | None, index: int | None, range_value: str | int | float | None)
@@ -403,9 +589,9 @@ get_result                -> ClearRequest(clear: bool = False)
 wait_until_done           -> WaitUntilDoneRequest(poll_interval: float = 0.2)
 ```
 
-## Configuration API
+## Minimal Usage Examples
 
-### Details 12
+### Single Measurement
 
 ```python
 from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
@@ -422,7 +608,7 @@ finally:
     dmm.close()
 ```
 
-### Details 12
+### Continuous Measurement
 
 ```python
 from xdm1000.xdm1000_ctrl import Xdm1000Ctrl
