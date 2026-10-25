@@ -1,7 +1,11 @@
 # XDM1000 (FastAPI / ese774_frame 連携)
 
-[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.en.md)
-[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.md)
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.md)
+[![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/xdm1000/blob/main/README.ja.md)
+
+[![GitHub](https://img.shields.io/badge/GitHub-ohara--lab--su%2Fxdm1000-181717?logo=github)](https://github.com/ohara-lab-su/xdm1000/)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Documentation-222222?logo=githubpages&logoColor=white)](https://ohara-lab-su.github.io/xdm1000/ja/)
+[![Ohara Lab](https://img.shields.io/badge/Ohara%20Lab-Home-4B5563?logo=homeassistant&logoColor=white)](https://ohara-lab-su.github.io/)
 
 `server_fastapi` は `Xdm1000Ctrl` を ese774_frame 経由で FastAPI に公開するための構成である。
 
