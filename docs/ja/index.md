@@ -1,5 +1,7 @@
 [![en](https://img.shields.io/badge/lang-en-red.svg)](https://ohara-lab-su.github.io/xdm1000/en/) [![ja](https://img.shields.io/badge/lang-ja-blue.svg)](https://ohara-lab-su.github.io/xdm1000/ja/)
 
+[GitHub repository](https://github.com/ohara-lab-su/xdm1000/) · [Project documentation](https://ohara-lab-su.github.io/)
+
 # XDM1000 ドキュメント
 
 OWON XDM1000/XDM1241 のPython制御、SCPI、マルチプロセス、FastAPIに関するドキュメント。
