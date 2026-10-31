@@ -7,7 +7,7 @@ name = "xdm1000-py"
 
 version = "0.2.10"
 
-description = "xdm1000 (using SCPI)"
+description = "Python control package for OWON XDM1000/XDM1241 multimeters with SCPI, continuous measurement, multiprocessing, and REST device-server access."
 authors = [
     { name = "Kengo NAKADA", email = "kengo.nakada@email.com" }
 ]
@@ -72,3 +72,9 @@ line-length = 88
 
 [tool.isort]
 profile = "black"
+
+[project.urls]
+Homepage = "https://ohara-lab-su.github.io/xdm1000/"
+Documentation = "https://ohara-lab-su.github.io/xdm1000/"
+Repository = "https://github.com/ohara-lab-su/xdm1000"
+Issues = "https://github.com/ohara-lab-su/xdm1000/issues"
